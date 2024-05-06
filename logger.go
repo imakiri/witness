@@ -46,6 +46,8 @@ func log(ctx context.Context, lvl level, msg string, records ...Record) {
 	var exRecords = Records(ctx)
 	switch logger := ctx.Value(KeyLogger).(type) {
 	case *zap.Logger:
+		logger.WithOptions(zap.AddCallerSkip(2))
+
 		var fields = make([]zap.Field, 0, 1+len(records)+len(exRecords))
 		fields = append(fields, zap.Stringer("trace_id", TraceID(ctx)))
 		for _, exRecord := range exRecords {
@@ -98,22 +100,22 @@ func Debug(ctx context.Context, msg string, records ...Record) {
 
 func OnError(ctx context.Context, msg string, err error, from string, records ...Record) {
 	if err != nil {
-		Error(ctx, msg, append(records, record.Error(from, err))...)
+		log(ctx, levelError, msg, append(records, record.Error(from, err))...)
 	}
 }
 
 func InfoOrError(ctx context.Context, msg string, err error, from string, records ...Record) {
 	if err != nil {
-		Error(ctx, msg, append(records, record.Error(from, err))...)
+		log(ctx, levelError, msg, append(records, record.Error(from, err))...)
 	} else {
-		Info(ctx, msg, records...)
+		log(ctx, levelInfo, msg, records...)
 	}
 }
 
 func DebugOrError(ctx context.Context, msg string, err error, from string, records ...Record) {
 	if err != nil {
-		Error(ctx, msg, append(records, record.Error(from, err))...)
+		log(ctx, levelError, msg, append(records, record.Error(from, err))...)
 	} else {
-		Debug(ctx, msg, records...)
+		log(ctx, levelDebug, msg, records...)
 	}
 }
