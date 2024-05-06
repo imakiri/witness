@@ -48,8 +48,7 @@ func log(ctx context.Context, lvl level, msg string, records ...Record) {
 	var exRecords = Records(ctx)
 	switch logger := ctx.Value(KeyLogger).(type) {
 	case *zap.Logger:
-		var fields = make([]zap.Field, 0, 1+len(records)+len(exRecords))
-		fields = append(fields, zap.Stringer("trace_id", TraceID(ctx)))
+		var fields = make([]zap.Field, 0, len(records)+len(exRecords))
 		for _, exRecord := range exRecords {
 			fields = append(fields, zap.Stringer(exRecord.Key(), exRecord))
 		}
@@ -70,7 +69,7 @@ func log(ctx context.Context, lvl level, msg string, records ...Record) {
 
 	var span = opentracing.SpanFromContext(ctx)
 	if span != nil {
-		var fields = make([]otLog.Field, 0, 1+len(records))
+		var fields = make([]otLog.Field, 0, 1+len(records)+len(exRecords))
 		fields = append(fields, otLog.String("trace_id", TraceID(ctx).String()))
 		for _, exRecord := range exRecords {
 			fields = append(fields, otLog.String(exRecord.Key(), exRecord.String()))
