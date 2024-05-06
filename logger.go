@@ -26,14 +26,16 @@ const (
 )
 
 func fixingRobPikeIdiocracy(records []Record) []Record {
-	var newRecords = make([]Record, len(records))
+	var newRecords = make([]Record, 0, len(records))
 	for _, r := range records {
 		if rs, ok := r.(record.Records); ok {
 			for _, r := range rs {
 				newRecords = append(newRecords, r)
 			}
 		} else {
-			newRecords = append(newRecords, r)
+			if r != nil {
+				newRecords = append(newRecords, r)
+			}
 		}
 	}
 	return newRecords
