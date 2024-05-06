@@ -54,3 +54,26 @@ func Stringer(key string, value fmt.Stringer) NamedStringer {
 		Stringer: value,
 	}
 }
+
+type ErrorRecord struct {
+	key string
+	error
+}
+
+func (r ErrorRecord) Key() string {
+	return r.key
+}
+
+func (r ErrorRecord) String() string {
+	if r.error != nil {
+		return r.Error()
+	}
+	return "nil"
+}
+
+func Error(key string, err error) ErrorRecord {
+	return ErrorRecord{
+		key:   key,
+		error: err,
+	}
+}
