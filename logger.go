@@ -2,6 +2,7 @@ package witness
 
 import (
 	"context"
+	"github.com/imakiri/witness/record"
 	"github.com/opentracing/opentracing-go"
 	otLog "github.com/opentracing/opentracing-go/log"
 	"go.uber.org/zap"
@@ -84,4 +85,26 @@ func Error(ctx context.Context, msg string, records ...Record) {
 
 func Debug(ctx context.Context, msg string, records ...Record) {
 	log(ctx, levelDebug, msg, records...)
+}
+
+func OnError(ctx context.Context, msg string, err error, from string, records ...Record) {
+	if err != nil {
+		Error(ctx, msg, append(records, record.Error(from, err))...)
+	}
+}
+
+func InfoOrError(ctx context.Context, msg string, err error, from string, records ...Record) {
+	if err != nil {
+		Error(ctx, msg, append(records, record.Error(from, err))...)
+	} else {
+		Info(ctx, msg, records...)
+	}
+}
+
+func DebugOrError(ctx context.Context, msg string, err error, from string, records ...Record) {
+	if err != nil {
+		Error(ctx, msg, append(records, record.Error(from, err))...)
+	} else {
+		Debug(ctx, msg, records...)
+	}
 }
