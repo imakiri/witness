@@ -12,7 +12,9 @@ const KeyLogger = "vp7bDJF4dHfKy545JohmsL8yoelUtpli"
 
 func WithZapLogger(logger *zap.Logger) Option {
 	return option(func(ctx context.Context) context.Context {
-		return context.WithValue(ctx, KeyLogger, logger.WithOptions(zap.AddCallerSkip(2)))
+		return context.WithValue(ctx, KeyLogger, logger.
+			WithOptions(zap.AddCallerSkip(2)).
+			Named(TraceID(ctx).String()))
 	})
 }
 
