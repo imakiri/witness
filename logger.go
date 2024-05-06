@@ -25,21 +25,32 @@ const (
 	levelDebug
 )
 
+func fixingRobPikeIdiocracy(records []Record) []Record {
+	var newRecords = make([]Record, len(records))
+	for _, r := range records {
+		if rs, ok := r.(record.Records); ok {
+			for _, r := range rs {
+				newRecords = append(newRecords, r)
+			}
+		} else {
+			newRecords = append(newRecords, r)
+		}
+	}
+	return newRecords
+}
+
 func log(ctx context.Context, lvl level, msg string, records ...Record) {
+	records = fixingRobPikeIdiocracy(records)
 	var exRecords = Records(ctx)
 	switch logger := ctx.Value(KeyLogger).(type) {
 	case *zap.Logger:
-		var fields = make([]zap.Field, 1+len(records)+len(exRecords))
-		var i int
-		fields[i] = zap.Stringer("trace_id", TraceID(ctx))
-		i++
-		for _, record := range exRecords {
-			fields[i] = zap.Stringer(record.Key(), record)
-			i++
+		var fields = make([]zap.Field, 0, 1+len(records)+len(exRecords))
+		fields = append(fields, zap.Stringer("trace_id", TraceID(ctx)))
+		for _, exRecord := range exRecords {
+			fields = append(fields, zap.Stringer(exRecord.Key(), exRecord))
 		}
-		for _, record := range records {
-			fields[i] = zap.Stringer(record.Key(), record)
-			i++
+		for _, r := range records {
+			fields = append(fields, zap.Stringer(r.Key(), r))
 		}
 		switch lvl {
 		case levelInfo:
@@ -55,17 +66,13 @@ func log(ctx context.Context, lvl level, msg string, records ...Record) {
 
 	var span = opentracing.SpanFromContext(ctx)
 	if span != nil {
-		var fields = make([]otLog.Field, 1+len(records))
-		var i int
-		fields[i] = otLog.String("trace_id", TraceID(ctx).String())
-		i++
-		for _, record := range exRecords {
-			fields[i] = otLog.String(record.Key(), record.String())
-			i++
+		var fields = make([]otLog.Field, 0, 1+len(records))
+		fields = append(fields, otLog.String("trace_id", TraceID(ctx).String()))
+		for _, exRecord := range exRecords {
+			fields = append(fields, otLog.String(exRecord.Key(), exRecord.String()))
 		}
-		for _, record := range records {
-			fields[i] = otLog.String(record.Key(), record.String())
-			i++
+		for _, r := range records {
+			fields = append(fields, otLog.String(r.Key(), r.String()))
 		}
 		span.LogFields(fields...)
 	}

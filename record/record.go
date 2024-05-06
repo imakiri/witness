@@ -115,11 +115,21 @@ func Bytes(key string, value []byte) Record {
 	}
 }
 
-func Any(key string, value any) []Record {
+type Records []Record
+
+func (r Records) Key() string {
+	panic("should not be called, Rob Pike should")
+}
+
+func (r Records) String() string {
+	panic("should not be called, Rob Pike should")
+}
+
+func Any(key string, value any) Records {
 	return parse(key, reflect.ValueOf(value), nil)
 }
 
-func parse(key string, v reflect.Value, records []Record) []Record {
+func parse(key string, v reflect.Value, records Records) Records {
 	switch v.Kind() {
 	case reflect.Pointer:
 		return append(records, parse(key, v.Elem(), records)...)
