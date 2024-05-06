@@ -12,7 +12,7 @@ const KeyLogger = "vp7bDJF4dHfKy545JohmsL8yoelUtpli"
 
 func WithZapLogger(logger *zap.Logger) Option {
 	return option(func(ctx context.Context) context.Context {
-		return context.WithValue(ctx, KeyLogger, logger)
+		return context.WithValue(ctx, KeyLogger, logger.WithOptions(zap.AddCallerSkip(2)))
 	})
 }
 
@@ -46,8 +46,6 @@ func log(ctx context.Context, lvl level, msg string, records ...Record) {
 	var exRecords = Records(ctx)
 	switch logger := ctx.Value(KeyLogger).(type) {
 	case *zap.Logger:
-		logger.WithOptions(zap.AddCallerSkip(2))
-
 		var fields = make([]zap.Field, 0, 1+len(records)+len(exRecords))
 		fields = append(fields, zap.Stringer("trace_id", TraceID(ctx)))
 		for _, exRecord := range exRecords {
