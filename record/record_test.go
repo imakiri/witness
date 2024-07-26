@@ -31,7 +31,11 @@ func TestStruct1(t *testing.T) {
 		},
 	}
 
-	var records = Any("test", s)
+	var marshaller = Marshaller[DefaultFormatter]{
+		MaxDepth: 16,
+	}
+
+	var records = marshaller.Marshal("test", s)
 	var buf = new(bytes.Buffer)
 	for _, record := range records {
 		fmt.Fprintln(buf, record.Key(), record.String())
