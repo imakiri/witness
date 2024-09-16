@@ -21,24 +21,26 @@ const (
 	ErrorTypeInternal ErrorType = "log:error:internal" // when system fails due to internal error
 )
 
+type Finish func()
+
 type Record interface {
 	Key() string
 	String() string
 }
 
-type Logger interface {
-	LogSpanChildOf(ctx context.Context, name string, records ...Record) (cxx context.Context, finish func())
-	LogSpanFollowsFrom(ctx context.Context, name string, records ...Record) (cxx context.Context, finish func())
+type Observer interface {
+	TraceSpanChildOf(ctx context.Context, name string, records ...Record) (context.Context, Finish)
+	TraceSpanFollowsFrom(ctx context.Context, name string, records ...Record) (context.Context, Finish)
 	LogEvent(ctx context.Context, t EventType, name string, records ...Record)
 	LogError(ctx context.Context, t ErrorType, name string, records ...Record)
 }
 
 type NilLogger struct{}
 
-func (NilLogger) LogSpanChildOf(ctx context.Context, name string, records ...Record) (cxx context.Context, finish func()) {
+func (NilLogger) TraceSpanChildOf(ctx context.Context, name string, records ...Record) (context.Context, Finish) {
 	return ctx, func() {}
 }
-func (NilLogger) LogSpanFollowsFrom(ctx context.Context, name string, records ...Record) (cxx context.Context, finish func()) {
+func (NilLogger) TraceSpanFollowsFrom(ctx context.Context, name string, records ...Record) (context.Context, Finish) {
 	return ctx, func() {}
 }
 func (NilLogger) LogEvent(ctx context.Context, t EventType, name string, records ...Record) {}
@@ -46,12 +48,12 @@ func (NilLogger) LogError(ctx context.Context, t ErrorType, name string, records
 
 const keyLogger = "witness.logger:3D3DNvuPg4yxitoS0wG8Q0FpI0AeY9BQ"
 
-func CtxWithLogger(ctx context.Context, logger Logger) context.Context {
+func CtxWithLogger(ctx context.Context, logger Observer) context.Context {
 	return context.WithValue(ctx, keyLogger, logger)
 }
 
-func CtxLogger(ctx context.Context) Logger {
-	logger, ok := ctx.Value(keyLogger).(Logger)
+func CtxLogger(ctx context.Context) Observer {
+	logger, ok := ctx.Value(keyLogger).(Observer)
 	if ok {
 		return logger
 	} else {
@@ -95,10 +97,10 @@ func ErrorInternal(ctx context.Context, msg string, records ...Record) {
 	Error(ctx, ErrorTypeInternal, msg, records...)
 }
 
-func SpanChildOf(ctx context.Context, name string, records ...Record) (cxx context.Context, finish func()) {
-	return CtxLogger(ctx).LogSpanChildOf(ctx, name, records...)
+func SpanChildOf(ctx context.Context, name string, records ...Record) (context.Context, Finish) {
+	return CtxLogger(ctx).TraceSpanChildOf(ctx, name, records...)
 }
 
-func SpanFollowsFrom(ctx context.Context, name string, records ...Record) (cxx context.Context, finish func()) {
-	return CtxLogger(ctx).LogSpanFollowsFrom(ctx, name, records...)
+func SpanFollowsFrom(ctx context.Context, name string, records ...Record) (context.Context, Finish) {
+	return CtxLogger(ctx).TraceSpanFollowsFrom(ctx, name, records...)
 }
