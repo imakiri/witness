@@ -48,11 +48,11 @@ func (NilLogger) LogError(ctx context.Context, t ErrorType, name string, records
 
 const keyLogger = "witness.logger:3D3DNvuPg4yxitoS0wG8Q0FpI0AeY9BQ"
 
-func CtxWithLogger(ctx context.Context, logger Observer) context.Context {
+func With(ctx context.Context, logger Observer) context.Context {
 	return context.WithValue(ctx, keyLogger, logger)
 }
 
-func CtxLogger(ctx context.Context) Observer {
+func From(ctx context.Context) Observer {
 	logger, ok := ctx.Value(keyLogger).(Observer)
 	if ok {
 		return logger
@@ -62,7 +62,7 @@ func CtxLogger(ctx context.Context) Observer {
 }
 
 func Event(ctx context.Context, t EventType, name string, records ...Record) {
-	CtxLogger(ctx).LogEvent(ctx, t, name, records...)
+	From(ctx).LogEvent(ctx, t, name, records...)
 }
 
 func Info(ctx context.Context, msg string, records ...Record) {
@@ -78,7 +78,7 @@ func Debug(ctx context.Context, msg string, records ...Record) {
 }
 
 func Error(ctx context.Context, t ErrorType, msg string, records ...Record) {
-	CtxLogger(ctx).LogError(ctx, t, msg, records...)
+	From(ctx).LogError(ctx, t, msg, records...)
 }
 
 func ErrorDisk(ctx context.Context, msg string, records ...Record) {
@@ -98,9 +98,9 @@ func ErrorInternal(ctx context.Context, msg string, records ...Record) {
 }
 
 func SpanChildOf(ctx context.Context, name string, records ...Record) (context.Context, Finish) {
-	return CtxLogger(ctx).TraceSpanChildOf(ctx, name, records...)
+	return From(ctx).TraceSpanChildOf(ctx, name, records...)
 }
 
 func SpanFollowsFrom(ctx context.Context, name string, records ...Record) (context.Context, Finish) {
-	return CtxLogger(ctx).TraceSpanFollowsFrom(ctx, name, records...)
+	return From(ctx).TraceSpanFollowsFrom(ctx, name, records...)
 }
