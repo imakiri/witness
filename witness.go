@@ -4,47 +4,44 @@ import (
 	"context"
 )
 
-type EventType string
+type EventTypeSpan string
 
 const (
-	EventTypeLogInfo  EventType = "log:info"
-	EventTypeLogWarn  EventType = "log:warn"
-	EventTypeLogDebug EventType = "log:debug"
+	EventTypeSpanStart  EventTypeSpan = "span:start"
+	EventTypeSpanFinish EventTypeSpan = "span:finish"
 )
 
-type ErrorType string
+type EventTypeLog string
 
 const (
-	ErrorTypeDisk     ErrorType = "log:error:disk"     // when system fails to write or read file on disk
-	ErrorTypeNetwork  ErrorType = "log:error:network"  // when system fails to reach another system via network
-	ErrorTypeExternal ErrorType = "log:error:external" // when system fails to validate ingoing request or response
-	ErrorTypeInternal ErrorType = "log:error:internal" // when system fails due to internal error
+	EventTypeLogInfo          EventTypeLog = "log:info"
+	EventTypeLogWarn          EventTypeLog = "log:warn"
+	EventTypeLogDebug         EventTypeLog = "log:debug"
+	EventTypeLogErrorStorage  EventTypeLog = "log:error:storage"  // when system fails to write or read file on disk or other persistent storage
+	EventTypeLogErrorNetwork  EventTypeLog = "log:error:network"  // when system fails to reach another system via network
+	EventTypeLogErrorExternal EventTypeLog = "log:error:external" // when system fails due to failure of an external system e.g. invalid ingoing request or response
+	EventTypeLogErrorInternal EventTypeLog = "log:error:internal" // when system fails due to internal error
 )
 
 type Finish func()
 
 type Record interface {
-	Key() string
+	Name() string
 	String() string
 }
 
 type Observer interface {
-	TraceSpanChildOf(ctx context.Context, name string, records ...Record) (context.Context, Finish)
-	TraceSpanFollowsFrom(ctx context.Context, name string, records ...Record) (context.Context, Finish)
-	LogEvent(ctx context.Context, t EventType, name string, records ...Record)
-	LogError(ctx context.Context, t ErrorType, name string, records ...Record)
+	ObserveSpan(ctx context.Context, name string, new bool) (context.Context, Finish)
+	ObserveLog(ctx context.Context, name string, t EventTypeLog, records ...Record)
 }
 
 type NilLogger struct{}
 
-func (NilLogger) TraceSpanChildOf(ctx context.Context, name string, records ...Record) (context.Context, Finish) {
+func (n NilLogger) ObserveSpan(ctx context.Context, name string, new bool) (context.Context, Finish) {
 	return ctx, func() {}
 }
-func (NilLogger) TraceSpanFollowsFrom(ctx context.Context, name string, records ...Record) (context.Context, Finish) {
-	return ctx, func() {}
-}
-func (NilLogger) LogEvent(ctx context.Context, t EventType, name string, records ...Record) {}
-func (NilLogger) LogError(ctx context.Context, t ErrorType, name string, records ...Record) {}
+
+func (n NilLogger) ObserveLog(ctx context.Context, name string, t EventTypeLog, records ...Record) {}
 
 const keyLogger = "witness.logger:3D3DNvuPg4yxitoS0wG8Q0FpI0AeY9BQ"
 
@@ -61,46 +58,48 @@ func From(ctx context.Context) Observer {
 	}
 }
 
-func Event(ctx context.Context, t EventType, name string, records ...Record) {
-	From(ctx).LogEvent(ctx, t, name, records...)
+func Log(ctx context.Context, name string, t EventTypeLog, records ...Record) {
+	From(ctx).ObserveLog(ctx, name, t, records...)
 }
 
 func Info(ctx context.Context, msg string, records ...Record) {
-	Event(ctx, EventTypeLogInfo, msg, records...)
+	Log(ctx, msg, EventTypeLogInfo, records...)
 }
 
 func Warn(ctx context.Context, msg string, records ...Record) {
-	Event(ctx, EventTypeLogWarn, msg, records...)
+	Log(ctx, msg, EventTypeLogWarn, records...)
 }
 
 func Debug(ctx context.Context, msg string, records ...Record) {
-	Event(ctx, EventTypeLogDebug, msg, records...)
+	Log(ctx, msg, EventTypeLogDebug, records...)
 }
 
-func Error(ctx context.Context, t ErrorType, msg string, records ...Record) {
-	From(ctx).LogError(ctx, t, msg, records...)
-}
-
-func ErrorDisk(ctx context.Context, msg string, records ...Record) {
-	Error(ctx, ErrorTypeDisk, msg, records...)
+func ErrorStorage(ctx context.Context, msg string, records ...Record) {
+	Log(ctx, msg, EventTypeLogErrorStorage, records...)
 }
 
 func ErrorNetwork(ctx context.Context, msg string, records ...Record) {
-	Error(ctx, ErrorTypeNetwork, msg, records...)
+	Log(ctx, msg, EventTypeLogErrorNetwork, records...)
 }
 
 func ErrorExternal(ctx context.Context, msg string, records ...Record) {
-	Error(ctx, ErrorTypeExternal, msg, records...)
+	Log(ctx, msg, EventTypeLogErrorExternal, records...)
 }
 
 func ErrorInternal(ctx context.Context, msg string, records ...Record) {
-	Error(ctx, ErrorTypeInternal, msg, records...)
+	Log(ctx, msg, EventTypeLogErrorInternal, records...)
 }
 
 func SpanChildOf(ctx context.Context, name string, records ...Record) (context.Context, Finish) {
-	return From(ctx).TraceSpanChildOf(ctx, name, records...)
+	var observer = From(ctx)
+	ctx, finish := observer.ObserveSpan(ctx, name, false)
+	observer.ObserveLog(ctx, name, EventTypeLogInfo, records...)
+	return ctx, finish
 }
 
 func SpanFollowsFrom(ctx context.Context, name string, records ...Record) (context.Context, Finish) {
-	return From(ctx).TraceSpanFollowsFrom(ctx, name, records...)
+	var observer = From(ctx)
+	ctx, finish := observer.ObserveSpan(ctx, name, true)
+	observer.ObserveLog(ctx, name, EventTypeLogInfo, records...)
+	return ctx, finish
 }

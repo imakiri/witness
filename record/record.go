@@ -8,90 +8,83 @@ import (
 )
 
 type Record struct {
-	key   string
+	name  string
 	value string
 }
 
-func (r Record) Key() string {
-	return r.key
+func (r Record) Name() string {
+	return r.name
 }
 
 func (r Record) String() string {
 	return r.value
 }
 
-func New(key string, value string) Record {
+func Name(name string) Record {
 	return Record{
-		key:   key,
-		value: value,
-	}
-}
-
-func Key(key string) Record {
-	return Record{
-		key:   key,
+		name:  name,
 		value: "",
 	}
 }
 
-func String(key string, value string) Record {
+func String(name string, value string) Record {
 	return Record{
-		key:   key,
+		name:  name,
 		value: value,
 	}
 }
 
-func Int(key string, value int) Record {
+func Int(name string, value int) Record {
 	return Record{
-		key:   key,
+		name:  name,
 		value: strconv.Itoa(value),
 	}
 }
 
-func Integer(key string, value int64) Record {
+func Integer(name string, value int64) Record {
 	return Record{
-		key:   key,
+		name:  name,
 		value: strconv.FormatInt(value, 10),
 	}
 }
 
-func Number(key string, value uint64) Record {
+func Number(name string, value uint64) Record {
 	return Record{
-		key:   key,
+		name:  name,
 		value: strconv.FormatUint(value, 10),
 	}
 }
 
-func Float(key string, value float64) Record {
+func Float(name string, value float64) Record {
 	return Record{
-		key:   key,
+		name:  name,
 		value: strconv.FormatFloat(value, 'e', -1, 64),
 	}
 }
 
 type NamedStringer struct {
-	key string
+	name string
 	fmt.Stringer
 }
 
-func (r NamedStringer) Key() string {
-	return r.key
+func (r NamedStringer) Name() string {
+	return r.name
 }
 
-func Stringer(key string, value fmt.Stringer) NamedStringer {
+func Stringer(name string, value fmt.Stringer) NamedStringer {
 	return NamedStringer{
-		key:      key,
+		name:     name,
 		Stringer: value,
 	}
 }
 
 type ErrorRecord struct {
-	key string
+	name string
 	error
 }
 
-func (r ErrorRecord) Key() string {
-	return r.key
+func (r ErrorRecord) Name() string {
+	return r.name
 }
 
 func (r ErrorRecord) String() string {
@@ -101,33 +94,33 @@ func (r ErrorRecord) String() string {
 	return "nil"
 }
 
-func Error(key string, err error) ErrorRecord {
+func Error(name string, err error) ErrorRecord {
 	return ErrorRecord{
-		key:   key,
+		name:  name,
 		error: err,
 	}
 }
 
-func Bool(key string, value bool) Record {
+func Bool(name string, value bool) Record {
 	return Record{
-		key:   key,
+		name:  name,
 		value: strconv.FormatBool(value),
 	}
 }
 
-func Bytes(key string, value []byte) Record {
+func Bytes(name string, value []byte) Record {
 	return Record{
-		key:   key,
+		name:  name,
 		value: base64.StdEncoding.EncodeToString(value),
 	}
 }
 
 type Records []Record
 
-func (r Records) Key() string {
+func (r Records) Name() string {
 	var s strings.Builder
 	for i := range r {
-		s.WriteString(r[i].Key())
+		s.WriteString(r[i].Name())
 		s.WriteRune(',')
 		s.WriteRune(' ')
 	}
@@ -137,7 +130,7 @@ func (r Records) Key() string {
 func (r Records) String() string {
 	var s strings.Builder
 	for i := range r {
-		s.WriteString(r[i].Key())
+		s.WriteString(r[i].Name())
 		s.WriteRune(':')
 		s.WriteString(r[i].String())
 		s.WriteRune('\n')

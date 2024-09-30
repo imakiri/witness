@@ -38,7 +38,7 @@ func TestStruct1(t *testing.T) {
 	var records = marshaller.Marshal("test", s)
 	var buf = new(bytes.Buffer)
 	for _, record := range records {
-		fmt.Fprintln(buf, record.Key(), record.String())
+		fmt.Fprintln(buf, record.Name(), record.String())
 	}
 
 	const expected = `test.Foo 12
