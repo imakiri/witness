@@ -13,6 +13,13 @@ func (e EventType) String() string {
 	return e.s
 }
 
+func EventTypeMetric() EventType {
+	return EventType{
+		i: 0,
+		s: "metric",
+	}
+}
+
 func EventTypeTraceNew() EventType {
 	return EventType{
 		i: 1,

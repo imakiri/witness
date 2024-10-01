@@ -17,10 +17,17 @@ type Observer interface {
 }
 
 //type Observer2 interface {
-//	Observe(ctx context.Context, traceID, instanceID, spanID uuid.UUID, eventType EventType, eventName string, records ...Record)
+//	Observe(ctx Context, eventType EventType, eventName string, records ...Record)
 //}
 //
-//func Observe(ctx context.Context, observer Observer2, eventType EventType, eventName string, records ...Record)  {
+//type Context struct {
+//	TraceID    uuid.UUID
+//	InstanceID uuid.UUID
+//	SpanID     uuid.UUID
+//}
+//
+//
+//func Observe(ctx context.Context, observer Observer2, eventType EventType, eventName string, records ...Record) {
 //
 //}
 
