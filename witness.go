@@ -4,25 +4,6 @@ import (
 	"context"
 )
 
-type EventTypeSpan string
-
-const (
-	EventTypeSpanStart  EventTypeSpan = "span:start"
-	EventTypeSpanFinish EventTypeSpan = "span:finish"
-)
-
-type EventTypeLog string
-
-const (
-	EventTypeLogInfo          EventTypeLog = "log:info"
-	EventTypeLogWarn          EventTypeLog = "log:warn"
-	EventTypeLogDebug         EventTypeLog = "log:debug"
-	EventTypeLogErrorStorage  EventTypeLog = "log:error:storage"  // when system fails to write or read file on disk or other persistent storage
-	EventTypeLogErrorNetwork  EventTypeLog = "log:error:network"  // when system fails to reach another system via network
-	EventTypeLogErrorExternal EventTypeLog = "log:error:external" // when system fails due to failure of an external system e.g. invalid ingoing request or response
-	EventTypeLogErrorInternal EventTypeLog = "log:error:internal" // when system fails due to internal error
-)
-
 type Finish func()
 
 type Record interface {
@@ -32,16 +13,24 @@ type Record interface {
 
 type Observer interface {
 	ObserveSpan(ctx context.Context, name string) (context.Context, Finish)
-	ObserveLog(ctx context.Context, name string, t EventTypeLog, records ...Record)
+	ObserveLog(ctx context.Context, name string, t EventType, records ...Record)
 }
 
-type NilLogger struct{}
+//type Observer2 interface {
+//	Observe(ctx context.Context, traceID, instanceID, spanID uuid.UUID, eventType EventType, eventName string, records ...Record)
+//}
+//
+//func Observe(ctx context.Context, observer Observer2, eventType EventType, eventName string, records ...Record)  {
+//
+//}
 
-func (n NilLogger) ObserveSpan(ctx context.Context, name string) (context.Context, Finish) {
+type NilObserver struct{}
+
+func (n NilObserver) ObserveSpan(ctx context.Context, name string) (context.Context, Finish) {
 	return ctx, func() {}
 }
 
-func (n NilLogger) ObserveLog(ctx context.Context, name string, t EventTypeLog, records ...Record) {}
+func (n NilObserver) ObserveLog(ctx context.Context, name string, t EventType, records ...Record) {}
 
 const keyLogger = "witness.logger:3D3DNvuPg4yxitoS0wG8Q0FpI0AeY9BQ"
 
@@ -54,45 +43,49 @@ func From(ctx context.Context) Observer {
 	if ok {
 		return logger
 	} else {
-		return NilLogger{}
+		return NilObserver{}
 	}
 }
 
-func Log(ctx context.Context, name string, t EventTypeLog, records ...Record) {
+func Log(ctx context.Context, name string, t EventType, records ...Record) {
 	From(ctx).ObserveLog(ctx, name, t, records...)
 }
 
 func Info(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogInfo, records...)
+	Log(ctx, msg, EventTypeLogInfo(), records...)
 }
 
 func Warn(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogWarn, records...)
+	Log(ctx, msg, EventTypeLogWarn(), records...)
 }
 
 func Debug(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogDebug, records...)
+	Log(ctx, msg, EventTypeLogDebug(), records...)
+}
+
+func Error(ctx context.Context, msg string, records ...Record) {
+	Log(ctx, msg, EventTypeLogError(), records...)
 }
 
 func ErrorStorage(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogErrorStorage, records...)
+	Log(ctx, msg, EventTypeLogErrorStorage(), records...)
 }
 
 func ErrorNetwork(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogErrorNetwork, records...)
+	Log(ctx, msg, EventTypeLogErrorNetwork(), records...)
 }
 
 func ErrorExternal(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogErrorExternal, records...)
+	Log(ctx, msg, EventTypeLogErrorExternal(), records...)
 }
 
 func ErrorInternal(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogErrorInternal, records...)
+	Log(ctx, msg, EventTypeLogErrorInternal(), records...)
 }
 
 func Span(ctx context.Context, name string, records ...Record) (context.Context, Finish) {
 	var observer = From(ctx)
 	ctx, finish := observer.ObserveSpan(ctx, name)
-	observer.ObserveLog(ctx, name, EventTypeLogInfo, records...)
+	observer.ObserveLog(ctx, name, EventTypeLogInfo(), records...)
 	return ctx, finish
 }

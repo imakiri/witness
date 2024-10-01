@@ -10,27 +10,28 @@
 
 ```json
 {
-  "spans": {
+  "ctx": {
     "trace_id": "uuid",
-    "span_id": "uuid",
-    "span_name": "string",
-    "span_event_type": "span_event_types",
-    "span_event_date": "timestamp"
+    "instance_id": "uuid",
+    "span_id": "uuid"
   },
-  "logs": {
-    "trace_id": "uuid",
-    "span_id": "uuid",
-    "log_id": "uuid",
-    "log_event_date": "timestamp",
-    "log_event_type": "log_event_types"
-  },
-  "records": {
-    "trace_id": "uuid",
-    "span_id": "uuid",
-    "log_id": "uuid",
-    "record_name": "string",
-    "record_value": "string"
+  "database": {
+    "events": {
+      "trace_id": "uuid",
+      "instance_id": "uuid",
+      "span_id": "uuid",
+      "event_id": "uuid",
+      "event_date": "timestamp",
+      "event_type": "event_types",
+      "event_name": "event_name"
+    },
+    "records": {
+      "event_id": "uuid",
+      "record_name": "string",
+      "record_value": "string"
+    }
   }
 }
+
 ```
 
