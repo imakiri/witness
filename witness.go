@@ -31,13 +31,13 @@ type Record interface {
 }
 
 type Observer interface {
-	ObserveSpan(ctx context.Context, name string, new bool) (context.Context, Finish)
+	ObserveSpan(ctx context.Context, name string) (context.Context, Finish)
 	ObserveLog(ctx context.Context, name string, t EventTypeLog, records ...Record)
 }
 
 type NilLogger struct{}
 
-func (n NilLogger) ObserveSpan(ctx context.Context, name string, new bool) (context.Context, Finish) {
+func (n NilLogger) ObserveSpan(ctx context.Context, name string) (context.Context, Finish) {
 	return ctx, func() {}
 }
 
@@ -90,16 +90,9 @@ func ErrorInternal(ctx context.Context, msg string, records ...Record) {
 	Log(ctx, msg, EventTypeLogErrorInternal, records...)
 }
 
-func SpanChildOf(ctx context.Context, name string, records ...Record) (context.Context, Finish) {
+func Span(ctx context.Context, name string, records ...Record) (context.Context, Finish) {
 	var observer = From(ctx)
-	ctx, finish := observer.ObserveSpan(ctx, name, false)
-	observer.ObserveLog(ctx, name, EventTypeLogInfo, records...)
-	return ctx, finish
-}
-
-func SpanFollowsFrom(ctx context.Context, name string, records ...Record) (context.Context, Finish) {
-	var observer = From(ctx)
-	ctx, finish := observer.ObserveSpan(ctx, name, true)
+	ctx, finish := observer.ObserveSpan(ctx, name)
 	observer.ObserveLog(ctx, name, EventTypeLogInfo, records...)
 	return ctx, finish
 }
