@@ -1,5 +1,7 @@
 package witness
 
+import "unicode/utf8"
+
 var maxValueLength int
 
 func MaxValueLength() int {
@@ -8,7 +10,7 @@ func MaxValueLength() int {
 
 func init() {
 	for _, event := range events {
-		maxValueLength = max(maxValueLength, len(event.s))
+		maxValueLength = max(maxValueLength, utf8.RuneCountInString(event.s))
 	}
 }
 
@@ -46,6 +48,12 @@ var events = []EventType{
 	EventTypeLogErrorNetwork(),
 	EventTypeLogErrorExternal(),
 	EventTypeLogErrorInternal(),
+}
+
+func Events() []EventType {
+	var es = make([]EventType, len(events))
+	copy(es, events)
+	return es
 }
 
 func EventTypeMetric() EventType {

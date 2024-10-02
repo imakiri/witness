@@ -7,6 +7,7 @@ import (
 	"github.com/imakiri/witness/record"
 	"log"
 	"strings"
+	"unicode/utf8"
 )
 
 type Observer struct {
@@ -24,11 +25,11 @@ func NewObserver() *Observer {
 }
 
 func (o *Observer) Observe(ctx context.Context, spanID uuid.UUID, eventType witness.EventType, eventName string, eventValue string, records ...witness.Record) {
-	o.maxEventNameLength = max(o.maxEventNameLength, len(eventName))
-	o.maxEventValueLength = max(o.maxEventValueLength, len(eventValue))
-	var eventTypeSpace = strings.Repeat(" ", witness.MaxValueLength()-len(eventType.String()))
-	var eventNameSpace = strings.Repeat(" ", o.maxEventNameLength-len(eventName))
-	var eventValueSpace = strings.Repeat(" ", o.maxEventValueLength-len(eventValue))
+	o.maxEventNameLength = max(o.maxEventNameLength, utf8.RuneCountInString(eventName))
+	o.maxEventValueLength = max(o.maxEventValueLength, utf8.RuneCountInString(eventValue))
+	var eventTypeSpace = strings.Repeat(" ", witness.MaxValueLength()-utf8.RuneCountInString(eventType.String()))
+	var eventNameSpace = strings.Repeat(" ", o.maxEventNameLength-utf8.RuneCountInString(eventName))
+	var eventValueSpace = strings.Repeat(" ", o.maxEventValueLength-utf8.RuneCountInString(eventValue))
 	var stringRecords []byte
 	stringRecords = append(stringRecords, "["...)
 	for _, r := range records {
