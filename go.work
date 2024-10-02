@@ -1,7 +1,7 @@
 go 1.23.1
 
 use (
-	.
+	./api
 	./observers/stdlog
 	./observers/tee
 	./record
