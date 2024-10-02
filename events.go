@@ -1,5 +1,17 @@
 package witness
 
+var maxValueLength int
+
+func MaxValueLength() int {
+	return maxValueLength
+}
+
+func init() {
+	for _, event := range events {
+		maxValueLength = max(maxValueLength, len(event.s))
+	}
+}
+
 type EventType struct {
 	i int64
 	s string
@@ -13,41 +25,59 @@ func (e EventType) String() string {
 	return e.s
 }
 
+var events = []EventType{
+	EventTypeMetric(),
+	EventTypeTraceNew(),
+	EventTypeInstanceOnline(),
+	EventTypeInstanceOffline(),
+	EventTypeSpanStart(),
+	EventTypeSpanFinish(),
+	EventTypeMessageSentInternal(),
+	EventTypeMessageSentExternal(),
+	EventTypeMessageReceivedInternal(),
+	EventTypeMessageReceivedExternal(),
+	EventTypeFunctionCall(),
+	EventTypeFunctionReturn(),
+	EventTypeLogInfo(),
+	EventTypeLogWarn(),
+	EventTypeLogDebug(),
+	EventTypeLogError(),
+	EventTypeLogErrorStorage(),
+	EventTypeLogErrorNetwork(),
+	EventTypeLogErrorExternal(),
+	EventTypeLogErrorInternal(),
+}
+
 func EventTypeMetric() EventType {
 	return EventType{
 		i: 0,
 		s: "metric",
 	}
 }
-
 func EventTypeTraceNew() EventType {
 	return EventType{
 		i: 1,
 		s: "trace:new",
 	}
 }
-
 func EventTypeInstanceOnline() EventType {
 	return EventType{
 		i: 10,
 		s: "instance:online",
 	}
 }
-
 func EventTypeInstanceOffline() EventType {
 	return EventType{
 		i: 11,
 		s: "instance:offline",
 	}
 }
-
 func EventTypeSpanStart() EventType {
 	return EventType{
 		i: 20,
 		s: "span:start",
 	}
 }
-
 func EventTypeSpanFinish() EventType {
 	return EventType{
 		i: 21,
@@ -84,6 +114,22 @@ func EventTypeMessageReceivedExternal() EventType {
 	return EventType{
 		i: 41,
 		s: "message:received:external",
+	}
+}
+
+// EventTypeFunctionCall use when calling a function
+func EventTypeFunctionCall() EventType {
+	return EventType{
+		i: 50,
+		s: "function:call",
+	}
+}
+
+// EventTypeFunctionReturn use when returning from a function
+func EventTypeFunctionReturn() EventType {
+	return EventType{
+		i: 51,
+		s: "function:return",
 	}
 }
 
