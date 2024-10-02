@@ -55,6 +55,38 @@ func EventTypeSpanFinish() EventType {
 	}
 }
 
+// EventTypeMessageSentInternal use when sending message to service within your witness system
+func EventTypeMessageSentInternal() EventType {
+	return EventType{
+		i: 30,
+		s: "message:sent:internal",
+	}
+}
+
+// EventTypeMessageSentExternal use when sending message to service outside your witness system
+func EventTypeMessageSentExternal() EventType {
+	return EventType{
+		i: 31,
+		s: "message:sent:external",
+	}
+}
+
+// EventTypeMessageReceivedInternal use when receiving message from service within your witness system
+func EventTypeMessageReceivedInternal() EventType {
+	return EventType{
+		i: 40,
+		s: "message:received:internal",
+	}
+}
+
+// EventTypeMessageReceivedExternal use when receiving message from service outside your witness system
+func EventTypeMessageReceivedExternal() EventType {
+	return EventType{
+		i: 41,
+		s: "message:received:external",
+	}
+}
+
 func EventTypeLogInfo() EventType {
 	return EventType{
 		i: 100,
