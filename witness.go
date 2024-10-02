@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/gofrs/uuid/v5"
-	"github.com/imakiri/witness/record"
 	"runtime"
 )
 
@@ -64,21 +63,21 @@ func Span(ctx context.Context, spanName string, records ...Record) (context.Cont
 	var newSpanID = uuid.Must(uuid.NewV7())
 	var oldSpanID = Extract(ctx)
 	var functionName string
-	var functionRecords = make([]Record, 0, 3)
+	var functionValue string
 	var pc, _, _, ok = runtime.Caller(2)
 	if ok {
 		var details = runtime.FuncForPC(pc)
 		if details != nil {
 			functionName = details.Name()
 			var atFile, atLine = details.FileLine(pc)
-			functionRecords = append(functionRecords, record.String("at", fmt.Sprintf("%s:%d", atFile, atLine)))
+			functionValue = fmt.Sprintf("%s:%d", atFile, atLine)
 		}
 	}
-	observer.Observe(ctx, oldSpanID, EventTypeFunctionCall(), spanName, functionName, functionRecords...)
+	observer.Observe(ctx, oldSpanID, EventTypeFunctionCall(), functionName, functionValue)
 	observer.Observe(ctx, newSpanID, EventTypeSpanStart(), spanName, oldSpanID.String(), records...)
 	return Inject(ctx, newSpanID), func(records ...Record) {
 		observer.Observe(ctx, newSpanID, EventTypeSpanFinish(), spanName, "", records...)
-		observer.Observe(ctx, oldSpanID, EventTypeFunctionReturn(), spanName, functionName)
+		observer.Observe(ctx, oldSpanID, EventTypeFunctionReturn(), functionName, "")
 	}
 }
 
