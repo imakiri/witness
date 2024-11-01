@@ -14,8 +14,8 @@ func NewObserver(observers ...witness.Observer) Observer {
 	return Observer{observers: observers}
 }
 
-func (o Observer) Observe(ctx context.Context, spanID uuid.UUID, eventType witness.EventType, eventName string, eventValue string, records ...witness.Record) {
+func (o Observer) Observe(ctx context.Context, spanID uuid.UUID, spanType witness.SpanType, eventType witness.EventType, eventName string, eventCaller string, records ...witness.Record) {
 	for _, observer := range o.observers {
-		observer.Observe(ctx, spanID, eventType, eventName, eventValue, records...)
+		observer.Observe(ctx, spanID, spanType, eventType, eventName, eventCaller, records...)
 	}
 }
