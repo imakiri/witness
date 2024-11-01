@@ -9,7 +9,7 @@ import (
 )
 
 func foo(ctx context.Context, i int, s string) (re string) {
-	ctx, finish := witness.Span(ctx, witness.SpanTypeFunction(), "service.foo", record.Int("i", i), record.String("s", s))
+	ctx, finish := witness.SpanFunction(ctx, "service.foo", record.Int("i", i), record.String("s", s))
 	defer finish(record.String("result", re))
 
 	re = fmt.Sprintf("%d: %s", i, s)
