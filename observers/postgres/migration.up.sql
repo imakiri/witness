@@ -21,7 +21,7 @@ CREATE TABLE witness.records
     event_id     uuid NOT NULL REFERENCES witness.events (event_id),
     record_id    uuid PRIMARY KEY,
     record_name  varchar(127),
-    record_value varchar
+    record_value varchar(1022)
 );
 
 CREATE INDEX witness.records_event_id ON witness.records (event_id DESC);

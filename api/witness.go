@@ -9,9 +9,9 @@ func observe(ctx context.Context, skip int, eventType EventType, eventName strin
 	var cxx = From(ctx)
 	var eventCallerName, eventCallerPath = caller(3, skip)
 	if cxx.Debug {
-		cxx.Observer.Observe(ctx, cxx.spanID, eventType, eventName, eventCallerPath, records...)
+		cxx.Observer.Observe(ctx, cxx.spanID, cxx.spanType, eventType, eventName, eventCallerPath, records...)
 	} else {
-		cxx.Observer.Observe(ctx, cxx.spanID, eventType, eventName, eventCallerName, records...)
+		cxx.Observer.Observe(ctx, cxx.spanID, cxx.spanType, eventType, eventName, eventCallerName, records...)
 	}
 }
 
@@ -57,10 +57,10 @@ func ErrorInternal(ctx context.Context, msg string, records ...Record) {
 
 type Finish func(records ...Record)
 
-func Span(ctx context.Context, spanName string, records ...Record) (context.Context, Finish) {
+func Span(ctx context.Context, stanType SpanType, spanName string, records ...Record) (context.Context, Finish) {
 	var messageID = uuid.Must(uuid.NewV7())
 	observe(ctx, 1, EventTypeMessageSent(), messageID.String())
-	var cxx = newSpan(ctx)
+	var cxx = newSpan(ctx, stanType)
 	observe(cxx, 0, EventTypeSpanStart(), spanName, records...)
 	observe(cxx, 0, EventTypeMessageReceived(), messageID.String())
 	return cxx, func(records ...Record) {

@@ -24,7 +24,7 @@ func main() {
 }
 
 func Foo(ctx context.Context, i int) (j int) {
-	ctx, finish := witness.Span(ctx, "Foo", record.Int("i", i))
+	ctx, finish := witness.Span(ctx, witness.SpanTypeFunction(), "Foo", record.Int("i", i))
 	defer func() { finish(record.Int("j", j)) }()
 
 	for i < 17 {
@@ -40,7 +40,7 @@ func Foo(ctx context.Context, i int) (j int) {
 }
 
 func Bar(ctx context.Context, i int) (j int) {
-	ctx, finish := witness.Span(ctx, "Bar", record.Int("i", i))
+	ctx, finish := witness.Span(ctx, witness.SpanTypeFunction(), "Bar", record.Int("i", i))
 	defer finish(record.Int("j", j))
 	return i * i
 }

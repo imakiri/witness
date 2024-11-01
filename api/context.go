@@ -10,13 +10,15 @@ type Context struct {
 	Version  string
 	Observer Observer
 	spanID   uuid.UUID
+	spanType SpanType
 }
 
 const keyContext = "witness.context:3D3DNvuPg4yxitoS0wG8Q0FpI0AeY9BQ"
 
-func newSpan(ctx context.Context) context.Context {
+func newSpan(ctx context.Context, spanType SpanType) context.Context {
 	var c = From(ctx)
 	c.spanID = uuid.Must(uuid.NewV7())
+	c.spanType = spanType
 	return With(ctx, c)
 }
 

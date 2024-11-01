@@ -2,21 +2,34 @@ package witness
 
 import "unicode/utf8"
 
-var maxValueLength int
+var maxEventValueLength int
 
-func MaxValueLength() int {
-	return maxValueLength
+func MaxEventValueLength() int {
+	return maxEventValueLength
 }
 
 func init() {
 	for _, event := range events {
-		maxValueLength = max(maxValueLength, utf8.RuneCountInString(event.s))
+		maxEventValueLength = max(maxEventValueLength, utf8.RuneCountInString(event.s))
 	}
 }
 
 type EventType struct {
 	i int64
 	s string
+}
+
+func MustNewEventType(i int64, s string) EventType {
+	if i < 1000 {
+		panic("i values below 1000 are reserved")
+	}
+	if utf8.RuneCountInString(s) > 127 {
+		panic("s values cannot exceed 128 characters")
+	}
+	return EventType{
+		i: i,
+		s: s,
+	}
 }
 
 func (e EventType) Value() int64 {
@@ -40,8 +53,6 @@ var events = []EventType{
 	EventTypeMessageReceived(),
 	EventTypeMessageReceivedInternal(),
 	EventTypeMessageReceivedExternal(),
-	//EventTypeFunctionCall(),
-	//EventTypeFunctionReturn(),
 	EventTypeLogInfo(),
 	EventTypeLogWarn(),
 	EventTypeLogDebug(),
@@ -95,7 +106,6 @@ func EventTypeSpanFinish() EventType {
 	}
 }
 
-// EventTypeMessageSent
 func EventTypeMessageSent() EventType {
 	return EventType{
 		i: 30,
@@ -119,7 +129,6 @@ func EventTypeMessageSentExternal() EventType {
 	}
 }
 
-// EventTypeMessageReceived
 func EventTypeMessageReceived() EventType {
 	return EventType{
 		i: 40,
