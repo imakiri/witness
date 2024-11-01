@@ -11,9 +11,10 @@ import (
 )
 
 type Observer struct {
-	maxEventNameLength  int
-	maxEventValueLength int
-	formatter           record.Formatter
+	maxEventNameLength   int
+	maxEventValueLength  int
+	maxEventCallerLength int
+	formatter            record.Formatter
 }
 
 func NewObserver() *Observer {
@@ -24,12 +25,14 @@ func NewObserver() *Observer {
 	}
 }
 
-func (o *Observer) Observe(ctx context.Context, spanID uuid.UUID, eventType witness.EventType, eventName string, eventValue string, records ...witness.Record) {
+func (o *Observer) Observe(ctx context.Context, spanID uuid.UUID, eventType witness.EventType, eventName string, eventCaller string, records ...witness.Record) {
+	o.maxEventCallerLength = max(o.maxEventCallerLength, utf8.RuneCountInString(eventCaller))
 	o.maxEventNameLength = max(o.maxEventNameLength, utf8.RuneCountInString(eventName))
-	o.maxEventValueLength = max(o.maxEventValueLength, utf8.RuneCountInString(eventValue))
+	//o.maxEventValueLength = max(o.maxEventValueLength, utf8.RuneCountInString(eventValue))
+	var eventCallerSpace = strings.Repeat(" ", o.maxEventCallerLength-utf8.RuneCountInString(eventCaller))
 	var eventTypeSpace = strings.Repeat(" ", witness.MaxValueLength()-utf8.RuneCountInString(eventType.String()))
 	var eventNameSpace = strings.Repeat(" ", o.maxEventNameLength-utf8.RuneCountInString(eventName))
-	var eventValueSpace = strings.Repeat(" ", o.maxEventValueLength-utf8.RuneCountInString(eventValue))
+	//var eventValueSpace = strings.Repeat(" ", o.maxEventValueLength-utf8.RuneCountInString(eventValue))
 	var stringRecords []byte
 	stringRecords = append(stringRecords, "["...)
 	for _, r := range records {
@@ -40,5 +43,5 @@ func (o *Observer) Observe(ctx context.Context, spanID uuid.UUID, eventType witn
 	}
 	stringRecords = stringRecords[:max(len(stringRecords)-2, 1)]
 	stringRecords = append(stringRecords, "]"...)
-	log.Println("spanID:", spanID, "eventType:", eventType, eventTypeSpace, "eventName:", eventName, eventNameSpace, "eventValue:", eventValue, eventValueSpace, "records:", string(stringRecords))
+	log.Println(eventCaller, eventCallerSpace, "spanID:", spanID, "eventType:", eventType, eventTypeSpace, "eventName:", eventName, eventNameSpace, "records:", string(stringRecords))
 }

@@ -137,3 +137,7 @@ func (r Records) String() string {
 	}
 	return s.String()[:s.Len()-1]
 }
+
+func (r Records) WithRecords(records ...Record) Records {
+	return append(r, records...)
+}

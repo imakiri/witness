@@ -29,17 +29,19 @@ func (e EventType) String() string {
 
 var events = []EventType{
 	EventTypeMetric(),
-	EventTypeTraceNew(),
+	EventTypeGeneric(),
 	EventTypeInstanceOnline(),
 	EventTypeInstanceOffline(),
 	EventTypeSpanStart(),
 	EventTypeSpanFinish(),
+	EventTypeMessageSent(),
 	EventTypeMessageSentInternal(),
 	EventTypeMessageSentExternal(),
+	EventTypeMessageReceived(),
 	EventTypeMessageReceivedInternal(),
 	EventTypeMessageReceivedExternal(),
-	EventTypeFunctionCall(),
-	EventTypeFunctionReturn(),
+	//EventTypeFunctionCall(),
+	//EventTypeFunctionReturn(),
 	EventTypeLogInfo(),
 	EventTypeLogWarn(),
 	EventTypeLogDebug(),
@@ -62,10 +64,10 @@ func EventTypeMetric() EventType {
 		s: "metric",
 	}
 }
-func EventTypeTraceNew() EventType {
+func EventTypeGeneric() EventType {
 	return EventType{
 		i: 1,
-		s: "trace:new",
+		s: "generic",
 	}
 }
 func EventTypeInstanceOnline() EventType {
@@ -93,10 +95,18 @@ func EventTypeSpanFinish() EventType {
 	}
 }
 
+// EventTypeMessageSent
+func EventTypeMessageSent() EventType {
+	return EventType{
+		i: 30,
+		s: "message:sent",
+	}
+}
+
 // EventTypeMessageSentInternal use when sending message to service within your witness system
 func EventTypeMessageSentInternal() EventType {
 	return EventType{
-		i: 30,
+		i: 31,
 		s: "message:sent:internal",
 	}
 }
@@ -104,15 +114,23 @@ func EventTypeMessageSentInternal() EventType {
 // EventTypeMessageSentExternal use when sending message to service outside your witness system
 func EventTypeMessageSentExternal() EventType {
 	return EventType{
-		i: 31,
+		i: 32,
 		s: "message:sent:external",
+	}
+}
+
+// EventTypeMessageReceived
+func EventTypeMessageReceived() EventType {
+	return EventType{
+		i: 40,
+		s: "message:received",
 	}
 }
 
 // EventTypeMessageReceivedInternal use when receiving message from service within your witness system
 func EventTypeMessageReceivedInternal() EventType {
 	return EventType{
-		i: 40,
+		i: 41,
 		s: "message:received:internal",
 	}
 }
@@ -120,26 +138,26 @@ func EventTypeMessageReceivedInternal() EventType {
 // EventTypeMessageReceivedExternal use when receiving message from service outside your witness system
 func EventTypeMessageReceivedExternal() EventType {
 	return EventType{
-		i: 41,
+		i: 42,
 		s: "message:received:external",
 	}
 }
 
-// EventTypeFunctionCall use when calling a function
-func EventTypeFunctionCall() EventType {
-	return EventType{
-		i: 50,
-		s: "function:call",
-	}
-}
-
-// EventTypeFunctionReturn use when returning from a function
-func EventTypeFunctionReturn() EventType {
-	return EventType{
-		i: 51,
-		s: "function:return",
-	}
-}
+//// EventTypeFunctionCall use when calling a function
+//func EventTypeFunctionCall() EventType {
+//	return EventType{
+//		i: 50,
+//		s: "function:call",
+//	}
+//}
+//
+//// EventTypeFunctionReturn use when returning from a function
+//func EventTypeFunctionReturn() EventType {
+//	return EventType{
+//		i: 51,
+//		s: "function:return",
+//	}
+//}
 
 func EventTypeLogInfo() EventType {
 	return EventType{

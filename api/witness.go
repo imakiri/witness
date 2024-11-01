@@ -2,89 +2,71 @@ package witness
 
 import (
 	"context"
-	"fmt"
 	"github.com/gofrs/uuid/v5"
-	"runtime"
 )
 
-type Record interface {
-	Name() string
-	String() string
+func observe(ctx context.Context, skip int, eventType EventType, eventName string, records ...Record) {
+	var cxx = From(ctx)
+	var eventCallerName, eventCallerPath = caller(3, skip)
+	if cxx.Debug {
+		cxx.Observer.Observe(ctx, cxx.spanID, eventType, eventName, eventCallerPath, records...)
+	} else {
+		cxx.Observer.Observe(ctx, cxx.spanID, eventType, eventName, eventCallerName, records...)
+	}
 }
 
-type Observer interface {
-	Observe(ctx context.Context, spanID uuid.UUID, eventType EventType, eventName string, eventValue string, records ...Record)
+func Observe(ctx context.Context, eventType EventType, eventName string, records ...Record) {
+	observe(ctx, 0, eventType, eventName, records...)
 }
 
-func Observe(ctx context.Context, observer Observer, eventType EventType, eventName string, records ...Record) {
-
-}
-
-func Log(ctx context.Context, eventName string, eventType EventType, eventValue string, records ...Record) {
-	From(ctx).Observe(ctx, Extract(ctx), eventType, eventName, eventValue, records...)
+func Log(ctx context.Context, eventType EventType, eventName string, records ...Record) {
+	observe(ctx, 0, eventType, eventName, records...)
 }
 
 func Info(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogInfo(), "", records...)
+	observe(ctx, 0, EventTypeLogInfo(), msg, records...)
 }
 
 func Warn(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogWarn(), "", records...)
+	observe(ctx, 0, EventTypeLogWarn(), msg, records...)
 }
 
 func Debug(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogDebug(), "", records...)
+	observe(ctx, 0, EventTypeLogDebug(), msg, records...)
 }
 
 func Error(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogError(), "", records...)
+	observe(ctx, 0, EventTypeLogError(), msg, records...)
 }
 
 func ErrorStorage(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogErrorStorage(), "", records...)
+	observe(ctx, 0, EventTypeLogErrorStorage(), msg, records...)
 }
 
 func ErrorNetwork(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogErrorNetwork(), "", records...)
+	observe(ctx, 0, EventTypeLogErrorNetwork(), msg, records...)
 }
 
 func ErrorExternal(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogErrorExternal(), "", records...)
+	observe(ctx, 0, EventTypeLogErrorExternal(), msg, records...)
 }
 
 func ErrorInternal(ctx context.Context, msg string, records ...Record) {
-	Log(ctx, msg, EventTypeLogErrorInternal(), "", records...)
+	observe(ctx, 0, EventTypeLogErrorInternal(), msg, records...)
 }
 
 type Finish func(records ...Record)
 
 func Span(ctx context.Context, spanName string, records ...Record) (context.Context, Finish) {
-	var observer = From(ctx)
-	var newSpanID = uuid.Must(uuid.NewV7())
-	var oldSpanID = Extract(ctx)
-	var functionName string
-	var functionValue string
-	var pc, _, _, ok = runtime.Caller(2)
-	if ok {
-		var details = runtime.FuncForPC(pc)
-		if details != nil {
-			functionName = details.Name()
-			var atFile, atLine = details.FileLine(pc)
-			functionValue = fmt.Sprintf("%s:%d", atFile, atLine)
-		}
+	var messageID = uuid.Must(uuid.NewV7())
+	observe(ctx, 1, EventTypeMessageSent(), messageID.String())
+	var cxx = newSpan(ctx)
+	observe(cxx, 0, EventTypeSpanStart(), spanName, records...)
+	observe(cxx, 0, EventTypeMessageReceived(), messageID.String())
+	return cxx, func(records ...Record) {
+		var messageID = uuid.Must(uuid.NewV7())
+		observe(cxx, 0, EventTypeMessageSent(), messageID.String())
+		observe(cxx, 0, EventTypeSpanFinish(), spanName, records...)
+		observe(ctx, 1, EventTypeMessageReceived(), messageID.String())
 	}
-	observer.Observe(ctx, oldSpanID, EventTypeFunctionCall(), functionName, functionValue)
-	observer.Observe(ctx, newSpanID, EventTypeSpanStart(), spanName, oldSpanID.String(), records...)
-	return Inject(ctx, newSpanID), func(records ...Record) {
-		observer.Observe(ctx, newSpanID, EventTypeSpanFinish(), spanName, "", records...)
-		observer.Observe(ctx, oldSpanID, EventTypeFunctionReturn(), functionName, "")
-	}
-}
-
-func MessageSent(ctx context.Context, messageName string, messageID uuid.UUID, records ...Record) {
-	From(ctx).Observe(ctx, Extract(ctx), EventTypeMessageSentInternal(), messageName, messageID.String(), records...)
-}
-
-func MessageReceived(ctx context.Context, messageName string, messageID uuid.UUID, records ...Record) {
-	From(ctx).Observe(ctx, Extract(ctx), EventTypeMessageReceivedInternal(), messageName, messageID.String(), records...)
 }

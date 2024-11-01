@@ -5,16 +5,30 @@ import (
 	"github.com/gofrs/uuid/v5"
 )
 
-const keySpan = "witness.span:2y5XTtYWapY7C8ddyB3UaceEERsqYOb8"
-
-func Extract(ctx context.Context) uuid.UUID {
-	var id, ok = ctx.Value(keySpan).(uuid.UUID)
-	if ok {
-		return id
-	}
-	return uuid.Nil
+type Context struct {
+	Debug    bool
+	Version  string
+	Observer Observer
+	spanID   uuid.UUID
 }
 
-func Inject(ctx context.Context, spanID uuid.UUID) context.Context {
-	return context.WithValue(ctx, keySpan, spanID)
+const keyContext = "witness.context:3D3DNvuPg4yxitoS0wG8Q0FpI0AeY9BQ"
+
+func newSpan(ctx context.Context) context.Context {
+	var c = From(ctx)
+	c.spanID = uuid.Must(uuid.NewV7())
+	return With(ctx, c)
+}
+
+func With(ctx context.Context, cxx Context) context.Context {
+	return context.WithValue(ctx, keyContext, cxx)
+}
+
+func From(ctx context.Context) Context {
+	observer, ok := ctx.Value(keyContext).(Context)
+	if ok {
+		return observer
+	} else {
+		return Context{Observer: NilObserver{}}
+	}
 }
