@@ -19,10 +19,6 @@ func Observe(ctx context.Context, eventType EventType, eventName string, records
 	observe(ctx, 1, 0, eventType, eventName, records...)
 }
 
-func Log(ctx context.Context, eventType EventType, eventName string, records ...Record) {
-	observe(ctx, 1, 0, eventType, eventName, records...)
-}
-
 func Info(ctx context.Context, msg string, records ...Record) {
 	observe(ctx, 1, 0, EventTypeLogInfo(), msg, records...)
 }
