@@ -7,7 +7,7 @@ import (
 )
 
 func TestCaller(t *testing.T) {
-	var name, at = caller(1, 0)
+	var name, at = caller(0, 0)
 	fmt.Println(name, at)
 	require.EqualValues(t, "github.com/imakiri/witness.TestCaller", name)
 
