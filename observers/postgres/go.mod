@@ -1,4 +1,4 @@
-module github.com/imakiri/witness/observer/postgres
+module github.com/imakiri/witness/observers/postgres
 
 go 1.23.1
 

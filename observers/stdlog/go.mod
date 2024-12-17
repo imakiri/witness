@@ -1,4 +1,4 @@
-module github.com/imakiri/witness/observer/stdlog
+module github.com/imakiri/witness/observers/stdlog
 
 go 1.23.1
 
