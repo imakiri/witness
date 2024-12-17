@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"github.com/imakiri/witness"
-	"github.com/imakiri/witness/observer/stdlog"
+	"github.com/imakiri/witness/observers/stdlog"
 	"github.com/imakiri/witness/record"
 )
 

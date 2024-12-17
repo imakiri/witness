@@ -1,0 +1,4 @@
+github.com/gofrs/uuid/v5 v5.1.0 h1:S5rqVKIigghZTCBKPCw0Y+bXkn26K3TB5mvQq2Ix8dk=
+github.com/gofrs/uuid/v5 v5.1.0/go.mod h1:CDOjlDMVAtN56jqyRUZh58JT31Tiw7/oQyEXZV+9bD8=
+github.com/imakiri/witness v0.5.0 h1:PDnCCA6yVk3fj00m6k1omBMQCsYHwrHND3M8lhKdcCQ=
+github.com/imakiri/witness v0.5.0/go.mod h1:4eNa9g9mjQonyXF6mEMBhdb0qCKtF3x1p3lXa6PTT+4=
