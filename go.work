@@ -1,0 +1,10 @@
+go 1.23.1
+
+use (
+	.
+	./examples
+	./observers/postgres
+	./observers/stdlog
+	./observers/tee
+	./record
+)
