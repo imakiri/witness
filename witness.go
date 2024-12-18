@@ -98,7 +98,7 @@ type Finish func(records ...Record)
 func Span(ctx context.Context, spanName string, records ...Record) (context.Context, Finish) {
 	var messageID = uuid.Must(uuid.NewV7())
 	observe(ctx, 2, 1, EventTypeMessageSent(), spanName, messageID.Bytes())
-	var cxx, _ = newSpan(ctx)
+	var cxx = With(ctx, NewContext(ctx, uuid.Must(uuid.NewV7())))
 	observe(cxx, 2, 0, EventTypeSpanStart(), spanName, nil, records...)
 	observe(cxx, 2, 0, EventTypeMessageReceived(), spanName, messageID.Bytes())
 	return cxx, func(records ...Record) {
@@ -110,20 +110,19 @@ func Span(ctx context.Context, spanName string, records ...Record) (context.Cont
 }
 
 // ServiceBegin creates standalone span and links it to existing
-func ServiceBegin(ctx context.Context, serviceName string, records ...Record) (spanID uuid.UUID) {
-	cxx, spanID := newSpan(ctx)
+func ServiceBegin(ctx context.Context, serviceName string, records ...Record) Context {
+	var c = From(ctx)
+	c.spanID = uuid.Must(uuid.NewV7())
+	var cxx = With(ctx, c)
 	observe(cxx, 2, 0, EventTypeServiceBegin(), serviceName, nil, records...)
 	var linkID = uuid.Must(uuid.NewV7())
 	observe(ctx, 1, 0, EventTypeLink(), "", linkID.Bytes(), records...)
 	observe(cxx, 1, 0, EventTypeLink(), "", linkID.Bytes(), records...)
-	return spanID
+	return c
 }
 
-func ServiceEnd(ctx context.Context, spanID uuid.UUID, records ...Record) {
-	var c = From(ctx)
-	c.spanID = spanID
-	ctx = With(ctx, c)
-	observe(ctx, 2, 0, EventTypeServiceEnd(), "", nil, records...)
+func ServiceEnd(ctx context.Context, c Context, records ...Record) {
+	observe(With(ctx, c), 2, 0, EventTypeServiceEnd(), "", nil, records...)
 }
 
 // Instance overrides any existing witness context withing ctx with new one

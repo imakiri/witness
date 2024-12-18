@@ -11,10 +11,11 @@ type Context struct {
 	spanID   uuid.UUID
 }
 
-func NewContext(debug bool, observer Observer, spanID uuid.UUID) Context {
+func NewContext(ctx context.Context, spanID uuid.UUID) Context {
+	var c = From(ctx)
 	return Context{
-		debug:    debug,
-		observer: observer,
+		debug:    c.debug,
+		observer: c.observer,
 		spanID:   spanID,
 	}
 }
@@ -32,12 +33,6 @@ func (c Context) SpanID() uuid.UUID {
 }
 
 const keyContext = "witness.context:3D3DNvuPg4yxitoS0wG8Q0FpI0AeY9BQ"
-
-func newSpan(ctx context.Context) (context.Context, uuid.UUID) {
-	var c = From(ctx)
-	c.spanID = uuid.Must(uuid.NewV7())
-	return With(ctx, c), c.spanID
-}
 
 func With(ctx context.Context, c Context) context.Context {
 	return context.WithValue(ctx, keyContext, c)
