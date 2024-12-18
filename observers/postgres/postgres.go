@@ -11,7 +11,7 @@ type Observer struct {
 	connection pgxpool.Pool
 }
 
-func (o *Observer) Observe(ctx context.Context, spanID uuid.UUID, spanType witness.SpanType, eventType witness.EventType, eventName string, eventCaller string, records ...witness.Record) {
+func (o *Observer) Observe(ctx context.Context, spanID uuid.UUID, eventType witness.EventType, eventName string, eventValue []byte, eventCaller string, records ...witness.Record) {
 	//TODO implement me
 	panic("implement me")
 }

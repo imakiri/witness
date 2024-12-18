@@ -8,10 +8,14 @@ func MaxEventValueLength() int {
 	return maxEventValueLength
 }
 
-func init() {
+func calcMaxEventValueLength() {
 	for _, event := range events {
 		maxEventValueLength = max(maxEventValueLength, utf8.RuneCountInString(event.s))
 	}
+}
+
+func init() {
+	calcMaxEventValueLength()
 }
 
 type EventType struct {
@@ -26,10 +30,13 @@ func MustNewEventType(i int64, s string) EventType {
 	if utf8.RuneCountInString(s) > 127 {
 		panic("s values cannot exceed 128 characters")
 	}
-	return EventType{
+	var eventType = EventType{
 		i: i,
 		s: s,
 	}
+	events = append(events, eventType)
+	calcMaxEventValueLength()
+	return eventType
 }
 
 func (e EventType) Value() int64 {
@@ -43,10 +50,13 @@ func (e EventType) String() string {
 var events = []EventType{
 	EventTypeMetric(),
 	EventTypeGeneric(),
-	EventTypeInstanceOnline(),
-	EventTypeInstanceOffline(),
-	EventTypeSpanStart(),
+	EventTypeLink(),
 	EventTypeSpanFinish(),
+	EventTypeSpanStart(),
+	EventTypeInstanceOffline(),
+	EventTypeInstanceOnline(),
+	EventTypeServiceEnd(),
+	EventTypeServiceBegin(),
 	EventTypeMessageSent(),
 	EventTypeMessageSentInternal(),
 	EventTypeMessageSentExternal(),
@@ -81,28 +91,46 @@ func EventTypeGeneric() EventType {
 		s: "generic",
 	}
 }
-func EventTypeInstanceOnline() EventType {
+func EventTypeLink() EventType {
 	return EventType{
-		i: 10,
-		s: "instance:online",
-	}
-}
-func EventTypeInstanceOffline() EventType {
-	return EventType{
-		i: 11,
-		s: "instance:offline",
-	}
-}
-func EventTypeSpanStart() EventType {
-	return EventType{
-		i: 20,
-		s: "span:start",
+		i: 2,
+		s: "link",
 	}
 }
 func EventTypeSpanFinish() EventType {
 	return EventType{
-		i: 21,
+		i: 10,
 		s: "span:finish",
+	}
+}
+func EventTypeSpanStart() EventType {
+	return EventType{
+		i: 11,
+		s: "span:start",
+	}
+}
+func EventTypeInstanceOffline() EventType {
+	return EventType{
+		i: 20,
+		s: "instance:offline",
+	}
+}
+func EventTypeInstanceOnline() EventType {
+	return EventType{
+		i: 21,
+		s: "instance:online",
+	}
+}
+func EventTypeServiceEnd() EventType {
+	return EventType{
+		i: 22,
+		s: "service:end",
+	}
+}
+func EventTypeServiceBegin() EventType {
+	return EventType{
+		i: 23,
+		s: "service:begin",
 	}
 }
 
@@ -151,22 +179,6 @@ func EventTypeMessageReceivedExternal() EventType {
 		s: "message:received:external",
 	}
 }
-
-//// EventTypeFunctionCall use when calling a function
-//func EventTypeFunctionCall() EventType {
-//	return EventType{
-//		i: 50,
-//		s: "function:call",
-//	}
-//}
-//
-//// EventTypeFunctionReturn use when returning from a function
-//func EventTypeFunctionReturn() EventType {
-//	return EventType{
-//		i: 51,
-//		s: "function:return",
-//	}
-//}
 
 func EventTypeLogInfo() EventType {
 	return EventType{

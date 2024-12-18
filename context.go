@@ -6,31 +6,48 @@ import (
 )
 
 type Context struct {
-	Debug    bool
-	Version  string
-	Observer Observer
+	debug    bool
+	observer Observer
 	spanID   uuid.UUID
-	spanType SpanType
+}
+
+func NewContext(debug bool, observer Observer, spanID uuid.UUID) Context {
+	return Context{
+		debug:    debug,
+		observer: observer,
+		spanID:   spanID,
+	}
+}
+
+func (c Context) Debug() bool {
+	return c.debug
+}
+
+func (c Context) Observer() Observer {
+	return c.observer
+}
+
+func (c Context) SpanID() uuid.UUID {
+	return c.spanID
 }
 
 const keyContext = "witness.context:3D3DNvuPg4yxitoS0wG8Q0FpI0AeY9BQ"
 
-func newSpan(ctx context.Context, spanType SpanType) context.Context {
+func newSpan(ctx context.Context) (context.Context, uuid.UUID) {
 	var c = From(ctx)
 	c.spanID = uuid.Must(uuid.NewV7())
-	c.spanType = spanType
-	return With(ctx, c)
+	return With(ctx, c), c.spanID
 }
 
-func With(ctx context.Context, cxx Context) context.Context {
-	return context.WithValue(ctx, keyContext, cxx)
+func With(ctx context.Context, c Context) context.Context {
+	return context.WithValue(ctx, keyContext, c)
 }
 
 func From(ctx context.Context) Context {
-	observer, ok := ctx.Value(keyContext).(Context)
+	c, ok := ctx.Value(keyContext).(Context)
 	if ok {
-		return observer
+		return c
 	} else {
-		return Context{Observer: NilObserver{}}
+		return Context{observer: NilObserver{}}
 	}
 }

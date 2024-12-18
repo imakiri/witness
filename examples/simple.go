@@ -10,11 +10,8 @@ import (
 func main() {
 	var observer witness.Observer = stdlog.NewObserver()
 	// observer = provider.NewObserver() // create observer instance
-	var ctx = witness.With(context.Background(), witness.Context{
-		Debug:    true,
-		Version:  "22a1229f", // commit hash or tag
-		Observer: observer,
-	})
+	var ctx, finish = witness.Instance(context.Background(), true, observer, "example.simple", "1")
+	defer finish()
 
 	var i = 10
 	var j = Foo(ctx, i)
@@ -24,7 +21,7 @@ func main() {
 }
 
 func Foo(ctx context.Context, i int) (j int) {
-	ctx, finish := witness.SpanFunction(ctx, "Foo", record.Int("i", i))
+	ctx, finish := witness.Span(ctx, "Foo", record.Int("i", i))
 	defer func() { finish(record.Int("j", j)) }()
 
 	for i < 17 {
@@ -40,7 +37,7 @@ func Foo(ctx context.Context, i int) (j int) {
 }
 
 func Bar(ctx context.Context, i int) (j int) {
-	ctx, finish := witness.SpanFunction(ctx, "Bar", record.Int("i", i))
+	ctx, finish := witness.Span(ctx, "Bar", record.Int("i", i))
 	defer finish(record.Int("j", j))
 	return i * i
 }
