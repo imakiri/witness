@@ -8,15 +8,35 @@ import (
 type Context struct {
 	debug    bool
 	observer Observer
-	spanID   uuid.UUID
+	spanIDs  []uuid.UUID
 }
 
-func NewContext(ctx context.Context, spanID uuid.UUID) Context {
-	var c = From(ctx)
+func NewContext(c Context, spanIDs ...uuid.UUID) Context {
 	return Context{
 		debug:    c.debug,
 		observer: c.observer,
-		spanID:   spanID,
+		spanIDs:  spanIDs,
+	}
+}
+
+func (c Context) observe(ctx context.Context, skip, extra int, eventType EventType, eventName string, records ...Record) {
+	var eventCallerName, eventCallerPath = caller(skip+1, extra)
+	//eventName = trim(eventName, MaxLengthEventName)
+	//eventValue = eventValue[:min(len(eventValue), MaxLengthEventValue)]
+	if c.debug {
+		//eventCallerPath = trim(eventCallerPath, MaxLengthEventCaller)
+		c.observer.Observe(ctx, c.spanIDs, eventType, eventName, eventCallerPath, records...)
+	} else {
+		//eventCallerName = trim(eventCallerName, MaxLengthEventCaller)
+		c.observer.Observe(ctx, c.spanIDs, eventType, eventName, eventCallerName, records...)
+	}
+}
+
+func (c Context) Append(spanID uuid.UUID) Context {
+	return Context{
+		debug:    c.debug,
+		observer: c.observer,
+		spanIDs:  append(c.spanIDs, spanID),
 	}
 }
 
@@ -28,8 +48,8 @@ func (c Context) Observer() Observer {
 	return c.observer
 }
 
-func (c Context) SpanID() uuid.UUID {
-	return c.spanID
+func (c Context) SpanIDs() []uuid.UUID {
+	return c.spanIDs
 }
 
 const keyContext = "witness.context:3D3DNvuPg4yxitoS0wG8Q0FpI0AeY9BQ"

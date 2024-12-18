@@ -3,8 +3,6 @@ package witness
 import (
 	"context"
 	"github.com/gofrs/uuid/v5"
-	"strconv"
-	"time"
 )
 
 func trim(str string, length int) string {
@@ -18,111 +16,85 @@ func trim(str string, length int) string {
 	return str[:last]
 }
 
-func observe(ctx context.Context, skip, extra int, eventType EventType, eventName string, eventValue string, records ...Record) {
-	var c = From(ctx)
-	var eventCallerName, eventCallerPath = caller(skip+1, extra)
-	//eventName = trim(eventName, MaxLengthEventName)
-	//eventValue = eventValue[:min(len(eventValue), MaxLengthEventValue)]
-	if c.debug {
-		//eventCallerPath = trim(eventCallerPath, MaxLengthEventCaller)
-		c.observer.Observe(ctx, c.spanID, eventType, eventName, eventValue, eventCallerPath, records...)
-	} else {
-		//eventCallerName = trim(eventCallerName, MaxLengthEventCaller)
-		c.observer.Observe(ctx, c.spanID, eventType, eventName, eventValue, eventCallerName, records...)
-	}
-}
-
-func err2string(err error) string {
+func appendError(records []Record, err error) []Record {
 	if err == nil {
-		return ""
+		return records
 	}
-	return err.Error()
+	return append(records, record{
+		key:   "err",
+		value: err.Error(),
+	})
 }
 
-func Observe(ctx context.Context, eventType EventType, eventName string, eventValue string, records ...Record) {
-	observe(ctx, 1, 0, eventType, eventName, eventValue, records...)
-}
-
-func ObserveString(ctx context.Context, eventType EventType, eventName string, eventValue string, records ...Record) {
-	observe(ctx, 1, 0, eventType, eventName, eventValue, records...)
-}
-
-func ObserveInteger(ctx context.Context, eventType EventType, eventName string, eventValue int64, records ...Record) {
-	observe(ctx, 1, 0, eventType, eventName, string(strconv.AppendInt(nil, eventValue, 10)), records...)
-}
-
-func ObserveTime(ctx context.Context, eventType EventType, eventName string, eventValue time.Time, records ...Record) {
-	observe(ctx, 1, 0, eventType, eventName, string(strconv.AppendInt(nil, eventValue.UnixNano(), 10)), records...)
-}
-
-func Link(ctx, cxx context.Context, msg string, records ...Record) {
-	var linkID = uuid.Must(uuid.NewV7())
-	observe(ctx, 1, 0, EventTypeLink(), msg, linkID.String(), records...)
-	observe(cxx, 1, 0, EventTypeLink(), msg, linkID.String(), records...)
+func Observe(ctx context.Context, eventType EventType, eventName string, records ...Record) {
+	From(ctx).observe(ctx, 1, 0, eventType, eventName, records...)
 }
 
 func Info(ctx context.Context, msg string, records ...Record) {
-	observe(ctx, 1, 0, EventTypeLogInfo(), msg, "", records...)
+	From(ctx).observe(ctx, 1, 0, EventTypeLogInfo(), msg, records...)
 }
 
 func Warn(ctx context.Context, msg string, records ...Record) {
-	observe(ctx, 1, 0, EventTypeLogWarn(), msg, "", records...)
+	From(ctx).observe(ctx, 1, 0, EventTypeLogWarn(), msg, records...)
 }
 
 func Debug(ctx context.Context, msg string, records ...Record) {
-	observe(ctx, 1, 0, EventTypeLogDebug(), msg, "", records...)
+	From(ctx).observe(ctx, 1, 0, EventTypeLogDebug(), msg, records...)
 }
 
 func Error(ctx context.Context, msg string, err error, records ...Record) {
-	observe(ctx, 1, 0, EventTypeLogError(), msg, err2string(err), records...)
+	From(ctx).observe(ctx, 1, 0, EventTypeLogError(), msg, appendError(records, err)...)
 }
 
 func ErrorStorage(ctx context.Context, msg string, err error, records ...Record) {
-	observe(ctx, 1, 0, EventTypeLogErrorStorage(), msg, err2string(err), records...)
+	From(ctx).observe(ctx, 1, 0, EventTypeLogErrorStorage(), msg, appendError(records, err)...)
 }
 
 func ErrorNetwork(ctx context.Context, msg string, err error, records ...Record) {
-	observe(ctx, 1, 0, EventTypeLogErrorNetwork(), msg, err2string(err), records...)
+	From(ctx).observe(ctx, 1, 0, EventTypeLogErrorNetwork(), msg, appendError(records, err)...)
 }
 
 func ErrorExternal(ctx context.Context, msg string, err error, records ...Record) {
-	observe(ctx, 1, 0, EventTypeLogErrorExternal(), msg, err2string(err), records...)
+	From(ctx).observe(ctx, 1, 0, EventTypeLogErrorExternal(), msg, appendError(records, err)...)
 }
 
 func ErrorInternal(ctx context.Context, msg string, err error, records ...Record) {
-	observe(ctx, 1, 0, EventTypeLogErrorInternal(), msg, err2string(err), records...)
+	From(ctx).observe(ctx, 1, 0, EventTypeLogErrorInternal(), msg, appendError(records, err)...)
 }
 
 type Finish func(records ...Record)
 
 func Span(ctx context.Context, spanName string, records ...Record) (context.Context, Finish) {
-	var messageID = uuid.Must(uuid.NewV7())
-	observe(ctx, 2, 1, EventTypeMessageSent(), spanName, messageID.String())
-	var cxx = With(ctx, NewContext(ctx, uuid.Must(uuid.NewV7())))
-	observe(cxx, 2, 0, EventTypeSpanStart(), spanName, "", records...)
-	observe(cxx, 2, 0, EventTypeMessageReceived(), spanName, messageID.String())
-	return cxx, func(records ...Record) {
+	var messageID = uuid.Must(uuid.NewV7()) // messageID as spanID
+	var outerContext = From(ctx)
+	outerContext.Append(messageID).observe(ctx, 2, 1, EventTypeMessageSent(), spanName)
+
+	var innerContext = NewContext(outerContext, uuid.Must(uuid.NewV7()))
+	innerContext.observe(ctx, 2, 0, EventTypeSpanStart(), spanName, records...)
+	innerContext.Append(messageID).observe(ctx, 2, 0, EventTypeMessageReceived(), spanName)
+
+	return With(ctx, innerContext), func(records ...Record) {
 		var messageID = uuid.Must(uuid.NewV7())
-		observe(cxx, 1, 0, EventTypeMessageSent(), spanName, messageID.String())
-		observe(cxx, 1, 0, EventTypeSpanFinish(), spanName, "", records...)
-		observe(ctx, 1, 1, EventTypeMessageReceived(), spanName, messageID.String())
+		innerContext.Append(messageID).observe(ctx, 1, 0, EventTypeMessageSent(), spanName)
+		innerContext.observe(ctx, 1, 0, EventTypeSpanFinish(), spanName, records...)
+		outerContext.Append(messageID).observe(ctx, 1, 1, EventTypeMessageReceived(), spanName)
 	}
 }
 
 // ServiceBegin creates standalone span and links it to existing one
 func ServiceBegin(ctx context.Context, serviceName string, records ...Record) Context {
 	var c = From(ctx)
-	c.spanID = uuid.Must(uuid.NewV7())
-	var cxx = With(ctx, c)
-	observe(cxx, 2, 0, EventTypeServiceBegin(), serviceName, "", records...)
-	var linkID = uuid.Must(uuid.NewV7())
-	observe(ctx, 1, 0, EventTypeLink(), "", linkID.String(), records...)
-	observe(cxx, 1, 0, EventTypeLink(), "", linkID.String(), records...)
-	return c
+	var linkID = uuid.Must(uuid.NewV7()) // linkID as spanID
+	var serviceContext = NewContext(c, uuid.Must(uuid.NewV7()))
+
+	c.Append(linkID).observe(ctx, 1, 0, EventTypeLink(), serviceName, records...)
+	serviceContext.observe(ctx, 2, 0, EventTypeServiceBegin(), serviceName, records...)
+	serviceContext.Append(linkID).observe(ctx, 1, 0, EventTypeLink(), serviceName, records...)
+	return serviceContext
 }
 
 func ServiceEnd(ctx context.Context, c Context, records ...Record) {
-	observe(With(ctx, c), 2, 0, EventTypeServiceEnd(), "", "", records...)
+	c.observe(ctx, 2, 0, EventTypeServiceEnd(), "", records...)
 }
 
 // Instance overrides any existing witness context withing ctx with new one
@@ -134,11 +106,14 @@ func Instance(ctx context.Context, debug bool, observer Observer, instanceName s
 	var c = Context{
 		debug:    debug,
 		observer: observer,
-		spanID:   spanID,
+		spanIDs:  []uuid.UUID{spanID},
 	}
-	var cxx = With(ctx, c)
-	observe(cxx, 2, 0, EventTypeInstanceOnline(), instanceName, instanceVersion, records...)
-	return cxx, func(records ...Record) {
-		observe(cxx, 1, 0, EventTypeInstanceOffline(), instanceName, instanceVersion, records...)
+	var recordVersion = record{
+		key:   "version",
+		value: instanceVersion,
+	}
+	c.observe(ctx, 2, 0, EventTypeInstanceOnline(), instanceName, append(records, recordVersion)...)
+	return With(ctx, c), func(records ...Record) {
+		c.observe(ctx, 1, 0, EventTypeInstanceOffline(), instanceName, append(records, recordVersion)...)
 	}
 }

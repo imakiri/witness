@@ -28,16 +28,16 @@ func NewObserver() *Observer {
 	}
 }
 
-func (o *Observer) Observe(ctx context.Context, spanID uuid.UUID, eventType witness.EventType, eventName string, eventValue string, eventCaller string, records ...witness.Record) {
+func (o *Observer) Observe(ctx context.Context, spanIDs []uuid.UUID, eventType witness.EventType, eventName string, eventCaller string, records ...witness.Record) {
 
 	o.mu.Lock()
 	o.maxEventCallerLength = max(o.maxEventCallerLength, utf8.RuneCountInString(eventCaller))
 	o.maxEventNameLength = max(o.maxEventNameLength, utf8.RuneCountInString(eventName))
-	o.maxEventValueLength = max(o.maxEventValueLength, utf8.RuneCountInString(eventValue))
+	//o.maxEventValueLength = max(o.maxEventValueLength, utf8.RuneCountInString(eventValue))
 	var eventCallerSpace = strings.Repeat(" ", o.maxEventCallerLength-utf8.RuneCountInString(eventCaller))
 	var eventTypeSpace = strings.Repeat(" ", witness.MaxEventValueLength()-utf8.RuneCountInString(eventType.String()))
 	var eventNameSpace = strings.Repeat(" ", o.maxEventNameLength-utf8.RuneCountInString(eventName))
-	var eventValueSpace = strings.Repeat(" ", o.maxEventValueLength-utf8.RuneCountInString(eventValue))
+	//var eventValueSpace = strings.Repeat(" ", o.maxEventValueLength-utf8.RuneCountInString(eventValue))
 	o.mu.Unlock()
 
 	var stringRecords []byte
@@ -50,6 +50,12 @@ func (o *Observer) Observe(ctx context.Context, spanID uuid.UUID, eventType witn
 	}
 	stringRecords = stringRecords[:max(len(stringRecords)-2, 1)]
 	stringRecords = append(stringRecords, "}"...)
-	log.Printf("%s %s[%s] %s%s [%s]%s %s%s %s", eventCaller, eventCallerSpace, spanID,
-		eventType, eventTypeSpace, eventName, eventNameSpace, eventValue, eventValueSpace, string(stringRecords))
+	var stringSpanIDs string
+	for i := range spanIDs {
+		stringSpanIDs += spanIDs[i].String()
+		stringSpanIDs += " "
+	}
+	stringSpanIDs = stringSpanIDs[:len(stringSpanIDs)-1]
+	log.Printf("%s %s[%s] %s%s [%s]%s %s", eventCaller, eventCallerSpace, stringSpanIDs,
+		eventType, eventTypeSpace, eventName, eventNameSpace, string(stringRecords))
 }
