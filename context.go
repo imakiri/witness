@@ -32,12 +32,28 @@ func (c Context) observe(ctx context.Context, skip, extra int, eventType EventTy
 	}
 }
 
-func (c Context) Append(spanID uuid.UUID) Context {
+func (c Context) Observe(ctx context.Context, eventType EventType, eventName string, records ...Record) {
+	c.observe(ctx, 1, 0, eventType, eventName, records...)
+}
+
+// Append appends child context to current context and returns new context
+func (c Context) Append(cc Context) Context {
 	return Context{
 		debug:    c.debug,
 		observer: c.observer,
-		spanIDs:  append(c.spanIDs, spanID),
+		spanIDs:  append(c.spanIDs, cc.spanIDs...),
 	}
+}
+
+// Reverse reverses span list, making a parent a child, and a child a parent, and returns new context
+func (c Context) Reverse() Context {
+	var cx = c
+	cx.spanIDs = make([]uuid.UUID, len(c.spanIDs))
+	// slices.Reverse() with copy
+	for i, j := 0, len(cx.spanIDs)-1; i < j; i, j = i+1, j-1 {
+		cx.spanIDs[i], cx.spanIDs[j] = c.spanIDs[j], c.spanIDs[i]
+	}
+	return cx
 }
 
 func (c Context) Debug() bool {

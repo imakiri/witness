@@ -12,6 +12,7 @@ import (
 //)
 
 type Observer interface {
+	// Observe spanIDs: sequence, order matter, you can think that [0] is a parent, and [1] is a child
 	Observe(ctx context.Context, spanIDs []uuid.UUID, eventType EventType, eventName string, eventCaller string, records ...Record)
 }
 

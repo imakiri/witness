@@ -65,31 +65,22 @@ func ErrorInternal(ctx context.Context, msg string, err error, records ...Record
 type Finish func(records ...Record)
 
 func Span(ctx context.Context, spanName string, records ...Record) (context.Context, Finish) {
-	var messageID = uuid.Must(uuid.NewV7()) // messageID as spanID
-	var outerContext = From(ctx)
-	outerContext.Append(messageID).observe(ctx, 2, 1, EventTypeMessageSent(), spanName)
-
-	var innerContext = NewContext(outerContext, uuid.Must(uuid.NewV7()))
-	innerContext.observe(ctx, 2, 0, EventTypeSpanStart(), spanName, records...)
-	innerContext.Append(messageID).observe(ctx, 2, 0, EventTypeMessageReceived(), spanName)
-
-	return With(ctx, innerContext), func(records ...Record) {
-		var messageID = uuid.Must(uuid.NewV7())
-		innerContext.Append(messageID).observe(ctx, 1, 0, EventTypeMessageSent(), spanName)
-		innerContext.observe(ctx, 1, 0, EventTypeSpanFinish(), spanName, records...)
-		outerContext.Append(messageID).observe(ctx, 1, 1, EventTypeMessageReceived(), spanName)
+	var parentContext = From(ctx)
+	var childContext = NewContext(parentContext, uuid.Must(uuid.NewV7()))
+	childContext.observe(ctx, 2, 0, EventTypeSpanStart(), spanName, records...)
+	parentContext.Append(childContext).observe(ctx, 2, 0, EventTypeLink(), spanName)
+	return With(ctx, childContext), func(records ...Record) {
+		childContext.Append(parentContext).observe(ctx, 1, 1, EventTypeLink(), spanName)
+		childContext.observe(ctx, 1, 0, EventTypeSpanFinish(), spanName, records...)
 	}
 }
 
 // ServiceBegin creates standalone span and links it to existing one
 func ServiceBegin(ctx context.Context, serviceName string, records ...Record) Context {
-	var c = From(ctx)
-	var linkID = uuid.Must(uuid.NewV7()) // linkID as spanID
-	var serviceContext = NewContext(c, uuid.Must(uuid.NewV7()))
-
-	c.Append(linkID).observe(ctx, 1, 0, EventTypeLink(), serviceName, records...)
+	var parentContext = From(ctx)
+	var serviceContext = NewContext(parentContext, uuid.Must(uuid.NewV7()))
 	serviceContext.observe(ctx, 2, 0, EventTypeServiceBegin(), serviceName, records...)
-	serviceContext.Append(linkID).observe(ctx, 1, 0, EventTypeLink(), serviceName, records...)
+	parentContext.Append(serviceContext).observe(ctx, 1, 0, EventTypeLink(), serviceName, records...)
 	return serviceContext
 }
 

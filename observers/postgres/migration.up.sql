@@ -14,8 +14,9 @@ CREATE UNIQUE INDEX events_event_id ON witness.events (event_id DESC);
 CREATE TABLE witness.spans
 (
     event_id uuid NOT NULL REFERENCES witness.events (event_id),
+    order_id int8 NOT NULL,
     span_id  uuid NOT NULL,
-    PRIMARY KEY (span_id, event_id)
+    PRIMARY KEY (order_id, event_id)
 );
 
 CREATE INDEX spans_event_id ON witness.spans (event_id DESC) INCLUDE (span_id);
