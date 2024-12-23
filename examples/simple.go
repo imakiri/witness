@@ -8,9 +8,12 @@ import (
 )
 
 func main() {
+	witness.EnableDebug()
+
+	// create observer instance
 	var observer witness.Observer = stdlog.NewObserver()
-	// observer = provider.NewObserver() // create observer instance
-	var ctx, finish = witness.Instance(context.Background(), true, observer, "example.simple", "1")
+	// create root span
+	var ctx, finish = witness.Instance(context.Background(), observer, "example.simple", "1")
 	defer finish()
 
 	var i = 10

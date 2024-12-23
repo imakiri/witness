@@ -57,10 +57,8 @@ var events = []EventType{
 	EventTypeInstanceOnline(),
 	EventTypeServiceEnd(),
 	EventTypeServiceBegin(),
-	EventTypeMessageSent(),
 	EventTypeMessageSentInternal(),
 	EventTypeMessageSentExternal(),
-	EventTypeMessageReceived(),
 	EventTypeMessageReceivedInternal(),
 	EventTypeMessageReceivedExternal(),
 	EventTypeLogInfo(),
@@ -134,13 +132,6 @@ func EventTypeServiceBegin() EventType {
 	}
 }
 
-func EventTypeMessageSent() EventType {
-	return EventType{
-		i: 30,
-		s: "message:sent",
-	}
-}
-
 // EventTypeMessageSentInternal use when sending message to service within your witness system
 func EventTypeMessageSentInternal() EventType {
 	return EventType{
@@ -154,13 +145,6 @@ func EventTypeMessageSentExternal() EventType {
 	return EventType{
 		i: 32,
 		s: "message:sent:external",
-	}
-}
-
-func EventTypeMessageReceived() EventType {
-	return EventType{
-		i: 40,
-		s: "message:received",
 	}
 }
 
