@@ -69,6 +69,18 @@ func Span(ctx context.Context, spanName string, records ...Record) (context.Cont
 	}
 }
 
+func Service(ctx context.Context, serviceName string, records ...Record) (context.Context, Finish) {
+	var c = From(ctx)
+	var spanID = uuid.Must(uuid.NewV7())
+	var spanIDs = []uuid.UUID{c.spanID, spanID}
+	c.Observer().Observe(ctx, spanIDs, EventTypeSpanServiceBegin(), serviceName, caller(1, 0), records...)
+	c.spanID = spanID
+	return c.To(ctx), func(records ...Record) {
+		spanIDs[0], spanIDs[1] = spanIDs[1], spanIDs[0]
+		c.Observer().Observe(ctx, spanIDs, EventTypeSpanServiceEnd(), serviceName, caller(0, 1), records...)
+	}
+}
+
 func InternalMessageSent(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
 	var c = From(ctx)
 	c.Observer().Observe(ctx, []uuid.UUID{c.spanID, msgID}, EventTypeSpanInternalMessageSent(), msgName, caller(1, 0), records...)

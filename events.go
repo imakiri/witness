@@ -55,8 +55,8 @@ var events = []EventType{
 	EventTypeSpanFinish(),
 	EventTypeSpanInstanceOnline(),
 	EventTypeSpanInstanceOffline(),
-	//EventTypeSpanServiceBegin(),
-	//EventTypeSpanServiceEnd(),
+	EventTypeSpanServiceBegin(),
+	EventTypeSpanServiceEnd(),
 	EventTypeSpanInternalMessageSent(),
 	EventTypeSpanInternalMessageReceived(),
 	EventTypeSpanExternalMessageSent(),
@@ -122,18 +122,18 @@ func EventTypeSpanInstanceOffline() EventType {
 	}
 }
 
-//func EventTypeSpanServiceBegin() EventType {
-//	return EventType{
-//		i: 12,
-//		s: "span:service:begin",
-//	}
-//}
-//func EventTypeSpanServiceEnd() EventType {
-//	return EventType{
-//		i: -12,
-//		s: "span:service:end",
-//	}
-//}
+func EventTypeSpanServiceBegin() EventType {
+	return EventType{
+		i: 12,
+		s: "span:service:begin",
+	}
+}
+func EventTypeSpanServiceEnd() EventType {
+	return EventType{
+		i: -12,
+		s: "span:service:end",
+	}
+}
 
 // EventTypeSpanInternalMessageSent use when sending message to service within your witness system
 func EventTypeSpanInternalMessageSent() EventType {
