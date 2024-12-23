@@ -45,9 +45,9 @@ func (c Context) span(ctx context.Context, contextName, spanName string, records
 
 func (c Context) serviceSpan(ctx context.Context, contextName, spanName string, records ...Record) (context.Context, Finish) {
 	var childContext = NewContext(c, contextName, uuid.Must(uuid.NewV7()))
-	c.Append(childContext).observe(ctx, 2, 0, EventTypeServiceBegin(), spanName, records...)
+	c.Append(childContext).observe(ctx, 2, 0, EventTypeSpanServiceBegin(), spanName, records...)
 	return With(ctx, childContext), func(records ...Record) {
-		childContext.Append(c).observe(ctx, 1, 0, EventTypeServiceEnd(), spanName, records...)
+		childContext.Append(c).observe(ctx, 1, 0, EventTypeSpanServiceEnd(), spanName, records...)
 	}
 }
 
