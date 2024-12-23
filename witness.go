@@ -11,19 +11,6 @@ func EnableDebug() {
 	debug = true
 }
 
-const mainContextName = "instance"
-
-func trim(str string, length int) string {
-	var last int
-	for i, _ := range str {
-		if i > length {
-			break
-		}
-		last = i
-	}
-	return str[:last]
-}
-
 func appendError(records []Record, err error) []Record {
 	if err == nil {
 		return records
@@ -35,51 +22,71 @@ func appendError(records []Record, err error) []Record {
 }
 
 func Observe(ctx context.Context, eventType EventType, eventName string, records ...Record) {
-	From(ctx).Context(mainContextName).observe(ctx, 1, 0, eventType, eventName, records...)
+	From(ctx).Observe(ctx, eventType, eventName, caller(1, 0), records...)
 }
 
 func Info(ctx context.Context, msg string, records ...Record) {
-	From(ctx).Context(mainContextName).observe(ctx, 1, 0, EventTypeLogInfo(), msg, records...)
+	From(ctx).Observe(ctx, EventTypeLogInfo(), msg, caller(1, 0), records...)
 }
 
 func Warn(ctx context.Context, msg string, records ...Record) {
-	From(ctx).Context(mainContextName).observe(ctx, 1, 0, EventTypeLogWarn(), msg, records...)
+	From(ctx).Observe(ctx, EventTypeLogWarn(), msg, caller(1, 0), records...)
 }
 
 func Debug(ctx context.Context, msg string, records ...Record) {
-	From(ctx).Context(mainContextName).observe(ctx, 1, 0, EventTypeLogDebug(), msg, records...)
+	From(ctx).Observe(ctx, EventTypeLogDebug(), msg, caller(1, 0), records...)
 }
 
 func Error(ctx context.Context, msg string, err error, records ...Record) {
-	From(ctx).Context(mainContextName).observe(ctx, 1, 0, EventTypeLogError(), msg, appendError(records, err)...)
+	From(ctx).Observe(ctx, EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
 }
 
 func ErrorStorage(ctx context.Context, msg string, err error, records ...Record) {
-	From(ctx).Context(mainContextName).observe(ctx, 1, 0, EventTypeLogErrorStorage(), msg, appendError(records, err)...)
+	From(ctx).Observe(ctx, EventTypeLogErrorStorage(), msg, caller(1, 0), appendError(records, err)...)
 }
 
 func ErrorNetwork(ctx context.Context, msg string, err error, records ...Record) {
-	From(ctx).Context(mainContextName).observe(ctx, 1, 0, EventTypeLogErrorNetwork(), msg, appendError(records, err)...)
+	From(ctx).Observe(ctx, EventTypeLogErrorNetwork(), msg, caller(1, 0), appendError(records, err)...)
 }
 
 func ErrorExternal(ctx context.Context, msg string, err error, records ...Record) {
-	From(ctx).Context(mainContextName).observe(ctx, 1, 0, EventTypeLogErrorExternal(), msg, appendError(records, err)...)
+	From(ctx).Observe(ctx, EventTypeLogErrorExternal(), msg, caller(1, 0), appendError(records, err)...)
 }
 
 func ErrorInternal(ctx context.Context, msg string, err error, records ...Record) {
-	From(ctx).Context(mainContextName).observe(ctx, 1, 0, EventTypeLogErrorInternal(), msg, appendError(records, err)...)
+	From(ctx).Observe(ctx, EventTypeLogErrorInternal(), msg, caller(1, 0), appendError(records, err)...)
 }
 
 func Span(ctx context.Context, spanName string, records ...Record) (context.Context, Finish) {
-	return From(ctx).Context(mainContextName).span(ctx, mainContextName, spanName, records...)
+	var c = From(ctx)
+	var spanID = uuid.Must(uuid.NewV7())
+	var spanIDs = []uuid.UUID{c.spanID, spanID}
+	c.Observer().Observe(ctx, spanIDs, EventTypeSpanStart(), spanName, caller(1, 0), records...)
+	c.spanID = spanID
+	return c.To(ctx), func(records ...Record) {
+		spanIDs[0], spanIDs[1] = spanIDs[1], spanIDs[0]
+		c.Observer().Observe(ctx, spanIDs, EventTypeSpanFinish(), spanName, caller(0, 1), records...)
+	}
 }
 
-func ServiceBegin(ctx context.Context, serviceName string, records ...Record) (context.Context, Finish) {
-	return From(ctx).Context(mainContextName).serviceSpan(ctx, serviceName, serviceName, records...)
+func InternalMessageSent(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
+	var c = From(ctx)
+	c.Observer().Observe(ctx, []uuid.UUID{c.spanID, msgID}, EventTypeSpanInternalMessageSent(), msgName, caller(1, 0), records...)
 }
 
-func ServiceEnd(ctx context.Context, serviceName string, records ...Record) {
-	From(ctx).Context(serviceName).observe(ctx, 2, 0, EventTypeSpanServiceEnd(), "", records...)
+func InternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
+	var c = From(ctx)
+	c.Observer().Observe(ctx, []uuid.UUID{msgID, c.spanID}, EventTypeSpanInternalMessageReceived(), msgName, caller(1, 0), records...)
+}
+
+func ExternalMessageSent(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
+	var c = From(ctx)
+	c.Observer().Observe(ctx, []uuid.UUID{c.spanID, msgID}, EventTypeSpanExternalMessageSent(), msgName, caller(1, 0), records...)
+}
+
+func ExternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
+	var c = From(ctx)
+	c.Observer().Observe(ctx, []uuid.UUID{msgID, c.spanID}, EventTypeSpanExternalMessageReceived(), msgName, caller(1, 0), records...)
 }
 
 // Instance overrides any existing witness context within ctx with a new one
@@ -87,18 +94,16 @@ func Instance(ctx context.Context, observer Observer, instanceName string, insta
 	if observer == nil {
 		observer = NilObserver{}
 	}
-	var spanID = uuid.Must(uuid.NewV7())
 	var c = Context{
-		observer:    observer,
-		contextName: mainContextName,
-		spanIDs:     []uuid.UUID{spanID},
+		observer: observer,
+		spanID:   uuid.Must(uuid.NewV7()),
 	}
 	var recordVersion = record{
 		key:   "version",
 		value: instanceVersion,
 	}
-	c.observe(ctx, 2, 0, EventTypeSpanInstanceOnline(), instanceName, append(records, recordVersion)...)
+	c.Observe(ctx, EventTypeSpanInstanceOnline(), instanceName, caller(1, 0), append(records, recordVersion)...)
 	return With(ctx, c), func(records ...Record) {
-		c.observe(ctx, 1, 0, EventTypeSpanInstanceOffline(), instanceName, append(records, recordVersion)...)
+		c.Observe(ctx, EventTypeSpanInstanceOffline(), instanceName, caller(1, 0), append(records, recordVersion)...)
 	}
 }

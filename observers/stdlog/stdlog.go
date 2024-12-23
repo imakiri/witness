@@ -2,6 +2,7 @@ package stdlog
 
 import (
 	"context"
+	"encoding/base64"
 	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/record"
@@ -52,10 +53,10 @@ func (o *Observer) Observe(ctx context.Context, spanIDs []uuid.UUID, eventType w
 	stringRecords = append(stringRecords, "}"...)
 	var stringSpanIDs string
 	for i := range spanIDs {
-		stringSpanIDs += spanIDs[i].String()
+		stringSpanIDs += base64.StdEncoding.EncodeToString(spanIDs[i].Bytes())
 		stringSpanIDs += " "
 	}
 	stringSpanIDs = stringSpanIDs[:len(stringSpanIDs)-1]
-	log.Printf("%s %s[%s] %s%s [%s]%s %s", eventCaller, eventCallerSpace, stringSpanIDs,
+	log.Printf("%s %s[%s%s] %s%s [%s]%s %s", eventCaller, eventCallerSpace, stringSpanIDs, strings.Repeat(" ", 25*max(2-len(spanIDs), 0)),
 		eventType, eventTypeSpace, eventName, eventNameSpace, string(stringRecords))
 }

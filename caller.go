@@ -37,7 +37,7 @@ var pcPool *sync.Pool
 //var atPool *sync.Pool
 
 // caller TODO there might be a bug with at_file/at_line
-func caller(skip, extra int) (string, string) {
+func caller(skip, extra int) string {
 	var details *runtime.Func
 	var pc = pcPool.Get().([]uintptr)
 	var size = runtime.Callers(skip+2, pc)
@@ -45,7 +45,7 @@ func caller(skip, extra int) (string, string) {
 	for i = 0; i < size; i++ {
 		details = runtime.FuncForPC(pc[i])
 		if details == nil {
-			return "", ""
+			return ""
 		}
 		//fmt.Println(details.Name())
 		if !strings.Contains(details.Name(), ".func") {
@@ -53,18 +53,22 @@ func caller(skip, extra int) (string, string) {
 		}
 	}
 	if !(i+extra < size) {
-		return "", ""
+		return ""
 	}
 	details = runtime.FuncForPC(pc[i+extra])
 	if details == nil {
-		return "", ""
+		return ""
 	}
 
-	//fmt.Println("extra", details.Name(), "pc", pc[i+extra])
-	var atFile, atLine = details.FileLine(pc[i+extra])
-	var c strings.Builder
-	c.WriteString(atFile)
-	c.WriteRune(':')
-	c.WriteString(strconv.FormatInt(int64(atLine), 10))
-	return details.Name(), c.String()
+	if debug {
+		//fmt.Println("extra", details.Name(), "pc", pc[i+extra])
+		var atFile, atLine = details.FileLine(pc[i+extra])
+		var c strings.Builder
+		c.WriteString(atFile)
+		c.WriteRune(':')
+		c.WriteString(strconv.FormatInt(int64(atLine)-1, 10))
+		return c.String()
+	}
+
+	return details.Name()
 }

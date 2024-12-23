@@ -49,14 +49,14 @@ func (e EventType) String() string {
 
 var events = []EventType{
 	EventTypeMetric(),
-	EventTypeGeneric(),
-	EventTypeLink(),
+	//EventTypeGeneric(),
+	//EventTypeLink(),
 	EventTypeSpanStart(),
 	EventTypeSpanFinish(),
 	EventTypeSpanInstanceOnline(),
 	EventTypeSpanInstanceOffline(),
-	EventTypeSpanServiceBegin(),
-	EventTypeSpanServiceEnd(),
+	//EventTypeSpanServiceBegin(),
+	//EventTypeSpanServiceEnd(),
 	EventTypeSpanInternalMessageSent(),
 	EventTypeSpanInternalMessageReceived(),
 	EventTypeSpanExternalMessageSent(),
@@ -83,18 +83,20 @@ func EventTypeMetric() EventType {
 		s: "metric",
 	}
 }
-func EventTypeGeneric() EventType {
-	return EventType{
-		i: 1,
-		s: "generic",
-	}
-}
-func EventTypeLink() EventType {
-	return EventType{
-		i: 2,
-		s: "link",
-	}
-}
+
+//	func EventTypeGeneric() EventType {
+//		return EventType{
+//			i: 1,
+//			s: "generic",
+//		}
+//	}
+//
+//	func EventTypeLink() EventType {
+//		return EventType{
+//			i: 2,
+//			s: "link",
+//		}
+//	}
 func EventTypeSpanStart() EventType {
 	return EventType{
 		i: 10,
@@ -119,18 +121,19 @@ func EventTypeSpanInstanceOffline() EventType {
 		s: "span:instance:offline",
 	}
 }
-func EventTypeSpanServiceBegin() EventType {
-	return EventType{
-		i: 12,
-		s: "span:service:begin",
-	}
-}
-func EventTypeSpanServiceEnd() EventType {
-	return EventType{
-		i: -12,
-		s: "span:service:end",
-	}
-}
+
+//func EventTypeSpanServiceBegin() EventType {
+//	return EventType{
+//		i: 12,
+//		s: "span:service:begin",
+//	}
+//}
+//func EventTypeSpanServiceEnd() EventType {
+//	return EventType{
+//		i: -12,
+//		s: "span:service:end",
+//	}
+//}
 
 // EventTypeSpanInternalMessageSent use when sending message to service within your witness system
 func EventTypeSpanInternalMessageSent() EventType {
