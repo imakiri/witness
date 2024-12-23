@@ -51,16 +51,16 @@ var events = []EventType{
 	EventTypeMetric(),
 	EventTypeGeneric(),
 	EventTypeLink(),
-	EventTypeSpanFinish(),
 	EventTypeSpanStart(),
-	EventTypeInstanceOffline(),
-	EventTypeInstanceOnline(),
-	EventTypeServiceEnd(),
-	EventTypeServiceBegin(),
-	EventTypeMessageSentInternal(),
-	EventTypeMessageSentExternal(),
-	EventTypeMessageReceivedInternal(),
-	EventTypeMessageReceivedExternal(),
+	EventTypeSpanFinish(),
+	EventTypeSpanInstanceOnline(),
+	EventTypeSpanInstanceOffline(),
+	EventTypeSpanServiceBegin(),
+	EventTypeSpanServiceEnd(),
+	EventTypeSpanInternalMessageSent(),
+	EventTypeSpanInternalMessageReceived(),
+	EventTypeSpanExternalMessageSent(),
+	EventTypeSpanExternalMessageReceived(),
 	EventTypeLogInfo(),
 	EventTypeLogWarn(),
 	EventTypeLogDebug(),
@@ -95,72 +95,72 @@ func EventTypeLink() EventType {
 		s: "link",
 	}
 }
-func EventTypeSpanFinish() EventType {
-	return EventType{
-		i: 10,
-		s: "span:finish",
-	}
-}
 func EventTypeSpanStart() EventType {
 	return EventType{
-		i: 11,
+		i: 10,
 		s: "span:start",
 	}
 }
-func EventTypeInstanceOffline() EventType {
+func EventTypeSpanFinish() EventType {
 	return EventType{
-		i: 20,
-		s: "instance:offline",
+		i: -10,
+		s: "span:finish",
 	}
 }
-func EventTypeInstanceOnline() EventType {
+func EventTypeSpanInstanceOnline() EventType {
 	return EventType{
-		i: 21,
-		s: "instance:online",
+		i: 11,
+		s: "span:instance:online",
 	}
 }
-func EventTypeServiceEnd() EventType {
+func EventTypeSpanInstanceOffline() EventType {
 	return EventType{
-		i: 22,
-		s: "service:end",
+		i: -11,
+		s: "span:instance:offline",
 	}
 }
-func EventTypeServiceBegin() EventType {
+func EventTypeSpanServiceBegin() EventType {
 	return EventType{
-		i: 23,
-		s: "service:begin",
+		i: 12,
+		s: "span:service:begin",
 	}
 }
-
-// EventTypeMessageSentInternal use when sending message to service within your witness system
-func EventTypeMessageSentInternal() EventType {
+func EventTypeSpanServiceEnd() EventType {
 	return EventType{
-		i: 31,
-		s: "message:sent:internal",
-	}
-}
-
-// EventTypeMessageSentExternal use when sending message to service outside your witness system
-func EventTypeMessageSentExternal() EventType {
-	return EventType{
-		i: 32,
-		s: "message:sent:external",
+		i: -12,
+		s: "span:service:end",
 	}
 }
 
-// EventTypeMessageReceivedInternal use when receiving message from service within your witness system
-func EventTypeMessageReceivedInternal() EventType {
+// EventTypeSpanInternalMessageSent use when sending message to service within your witness system
+func EventTypeSpanInternalMessageSent() EventType {
 	return EventType{
-		i: 41,
-		s: "message:received:internal",
+		i: 13,
+		s: "span:internal_message:sent",
 	}
 }
 
-// EventTypeMessageReceivedExternal use when receiving message from service outside your witness system
-func EventTypeMessageReceivedExternal() EventType {
+// EventTypeSpanInternalMessageReceived use when receiving message from service within your witness system
+func EventTypeSpanInternalMessageReceived() EventType {
 	return EventType{
-		i: 42,
-		s: "message:received:external",
+		i: -13,
+		s: "span:internal_message:received",
+	}
+}
+
+// EventTypeSpanExternalMessageSent use when sending message to service outside your witness system
+func EventTypeSpanExternalMessageSent() EventType {
+	return EventType{
+		i: 14,
+		s: "span:message_external:sent",
+	}
+}
+
+// EventTypeSpanExternalMessageReceived use when receiving message from service outside your witness system
+func EventTypeSpanExternalMessageReceived() EventType {
+	return EventType{
+		i: -14,
+		s: "span:external_message:received",
 	}
 }
 

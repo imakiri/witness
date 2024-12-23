@@ -79,7 +79,7 @@ func ServiceBegin(ctx context.Context, serviceName string, records ...Record) (c
 }
 
 func ServiceEnd(ctx context.Context, serviceName string, records ...Record) {
-	From(ctx).Context(serviceName).observe(ctx, 2, 0, EventTypeServiceEnd(), "", records...)
+	From(ctx).Context(serviceName).observe(ctx, 2, 0, EventTypeSpanServiceEnd(), "", records...)
 }
 
 // Instance overrides any existing witness context within ctx with a new one
@@ -97,8 +97,8 @@ func Instance(ctx context.Context, observer Observer, instanceName string, insta
 		key:   "version",
 		value: instanceVersion,
 	}
-	c.observe(ctx, 2, 0, EventTypeInstanceOnline(), instanceName, append(records, recordVersion)...)
+	c.observe(ctx, 2, 0, EventTypeSpanInstanceOnline(), instanceName, append(records, recordVersion)...)
 	return With(ctx, c), func(records ...Record) {
-		c.observe(ctx, 1, 0, EventTypeInstanceOffline(), instanceName, append(records, recordVersion)...)
+		c.observe(ctx, 1, 0, EventTypeSpanInstanceOffline(), instanceName, append(records, recordVersion)...)
 	}
 }
