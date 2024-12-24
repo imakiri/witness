@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/observers/stdlog"
 	"github.com/imakiri/witness/record"
+	"log"
+	"net/http"
 )
 
 func main() {
@@ -21,6 +24,25 @@ func main() {
 	_ = j
 
 	j = Bar(ctx, i)
+
+	var client = new(http.Client)
+
+	var msgID = uuid.Must(uuid.NewV7())
+	var request, err = http.NewRequest(http.MethodGet, "https://google.com", nil)
+	if err != nil {
+		log.Fatalln("http.NewRequest failed with error:", err)
+	}
+	request.Header.Set("X-Message", msgID.String())
+
+	witness.ExternalMessageSent(ctx, msgID, "google request")
+	response, err := client.Do(request)
+	if err != nil {
+		log.Fatalln("client.Do(request) failed with error:", err)
+	}
+	witness.ExternalMessageReceived(ctx, msgID, "google response", record.Int("status_code", response.StatusCode))
+	if response.StatusCode != http.StatusOK {
+		log.Fatalln("client.Do(request) failed with code:", response.StatusCode)
+	}
 }
 
 func Foo(ctx context.Context, i int) (j int) {
