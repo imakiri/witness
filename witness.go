@@ -107,6 +107,14 @@ func InternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName strin
 	c.Observer().Observe(ctx, []uuid.UUID{msgID, c.spanID}, EventTypeSpanInternalMessageReceived(), msgName, caller(1, 0), records...)
 }
 
+func ExternalMessage(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) Finish {
+	var c = From(ctx)
+	c.Observer().Observe(ctx, []uuid.UUID{c.spanID, msgID}, EventTypeSpanExternalMessageSent(), msgName, caller(1, 0), records...)
+	return func(records ...Record) {
+		c.Observer().Observe(ctx, []uuid.UUID{msgID, c.spanID}, EventTypeSpanExternalMessageReceived(), msgName, caller(1, 1), records...)
+	}
+}
+
 func ExternalMessageSent(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
 	var c = From(ctx)
 	c.Observer().Observe(ctx, []uuid.UUID{c.spanID, msgID}, EventTypeSpanExternalMessageSent(), msgName, caller(1, 0), records...)
