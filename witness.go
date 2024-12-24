@@ -70,18 +70,19 @@ func Span(ctx context.Context, spanName string, records ...Record) (context.Cont
 	}
 }
 
-func SpanStart(ctx context.Context, spanID uuid.UUID, spanName string, records ...Record) context.Context {
+func SpanStart(ctx context.Context, spanName string, records ...Record) context.Context {
 	var c = From(ctx)
+	var spanID = uuid.Must(uuid.NewV7())
 	var spanIDs = []uuid.UUID{c.spanID, spanID}
-	ctx = context.WithValue(ctx, fmt.Sprint(keyContext, ":", spanID), spanIDs)
+	ctx = context.WithValue(ctx, fmt.Sprint(keyContext, ":", spanName), spanIDs)
 	c.Observer().Observe(ctx, spanIDs, EventTypeSpanStart(), spanName, caller(1, 0), records...)
 	c.spanID = spanID
 	return c.To(ctx)
 }
 
-func SpanFinish(ctx context.Context, spanID uuid.UUID, eventName string, records ...Record) {
-	var spanIDs = ctx.Value(fmt.Sprint(keyContext, ":", spanID)).([]uuid.UUID)
-	From(ctx).Observer().Observe(ctx, spanIDs, EventTypeSpanFinish(), eventName, caller(0, 1), records...)
+func SpanFinish(ctx context.Context, spanName string, records ...Record) {
+	var spanIDs = ctx.Value(fmt.Sprint(keyContext, ":", spanName)).([]uuid.UUID)
+	From(ctx).Observer().Observe(ctx, spanIDs, EventTypeSpanFinish(), spanName, caller(0, 1), records...)
 }
 
 func Service(ctx context.Context, serviceName string, records ...Record) (context.Context, Finish) {
