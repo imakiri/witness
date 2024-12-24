@@ -22,6 +22,11 @@ func (c Context) SpanID() uuid.UUID {
 	return c.spanID
 }
 
+func (c Context) WithSpanID(spanID uuid.UUID) Context {
+	c.spanID = spanID
+	return c
+}
+
 func (c Context) Observe(ctx context.Context, eventType EventType, eventName string, eventCaller string, records ...Record) {
 	c.observer.Observe(ctx, []uuid.UUID{c.spanID}, eventType, eventName, eventCaller, records...)
 }

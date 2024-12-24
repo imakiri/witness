@@ -2,6 +2,7 @@ package witness
 
 import (
 	"context"
+	"fmt"
 	"github.com/gofrs/uuid/v5"
 )
 
@@ -67,6 +68,20 @@ func Span(ctx context.Context, spanName string, records ...Record) (context.Cont
 		spanIDs[0], spanIDs[1] = spanIDs[1], spanIDs[0]
 		c.Observer().Observe(ctx, spanIDs, EventTypeSpanFinish(), spanName, caller(0, 1), records...)
 	}
+}
+
+func SpanStart(ctx context.Context, spanID uuid.UUID, spanName string, records ...Record) context.Context {
+	var c = From(ctx)
+	var spanIDs = []uuid.UUID{c.spanID, spanID}
+	ctx = context.WithValue(ctx, fmt.Sprint(keyContext, ":", spanID), spanIDs)
+	c.Observer().Observe(ctx, spanIDs, EventTypeSpanStart(), spanName, caller(1, 0), records...)
+	c.spanID = spanID
+	return c.To(ctx)
+}
+
+func SpanFinish(ctx context.Context, spanID uuid.UUID, eventName string, records ...Record) {
+	var spanIDs = ctx.Value(fmt.Sprint(keyContext, ":", spanID)).([]uuid.UUID)
+	From(ctx).Observer().Observe(ctx, spanIDs, EventTypeSpanFinish(), eventName, caller(0, 1), records...)
 }
 
 func Service(ctx context.Context, serviceName string, records ...Record) (context.Context, Finish) {
