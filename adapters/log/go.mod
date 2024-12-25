@@ -1,4 +1,4 @@
-module github.com/imakiri/adapters/log
+module github.com/imakiri/witness/adapters/log
 
 go 1.23.3
 
