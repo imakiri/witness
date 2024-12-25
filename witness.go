@@ -42,6 +42,14 @@ func Error(ctx context.Context, msg string, err error, records ...Record) {
 	From(ctx).Observe(ctx, EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
 }
 
+func ErrorOrInfo(ctx context.Context, msg string, err error, records ...Record) {
+	if err != nil {
+		From(ctx).Observe(ctx, EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
+	} else {
+		From(ctx).Observe(ctx, EventTypeLogInfo(), msg, caller(1, 0), records...)
+	}
+}
+
 func ErrorStorage(ctx context.Context, msg string, err error, records ...Record) {
 	From(ctx).Observe(ctx, EventTypeLogErrorStorage(), msg, caller(1, 0), appendError(records, err)...)
 }

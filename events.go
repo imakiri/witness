@@ -24,8 +24,8 @@ type EventType struct {
 }
 
 func MustNewEventType(i int64, s string) EventType {
-	if i < 1000 {
-		panic("i values below 1000 are reserved")
+	if -1000 < i && i < 1000 {
+		panic("i values in range (-1000,+1000) are reserved")
 	}
 	if utf8.RuneCountInString(s) > 127 {
 		panic("s values cannot exceed 128 characters")
