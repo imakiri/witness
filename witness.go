@@ -42,11 +42,11 @@ func Error(ctx context.Context, msg string, err error, records ...Record) {
 	From(ctx).Observe(ctx, EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
 }
 
-func ErrorOrInfo(ctx context.Context, msg string, err error, records ...Record) {
+func ErrorOrInfo(ctx context.Context, okMsg, errMsg string, err error, records ...Record) {
 	if err != nil {
-		From(ctx).Observe(ctx, EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
+		From(ctx).Observe(ctx, EventTypeLogError(), errMsg, caller(1, 0), appendError(records, err)...)
 	} else {
-		From(ctx).Observe(ctx, EventTypeLogInfo(), msg, caller(1, 0), records...)
+		From(ctx).Observe(ctx, EventTypeLogInfo(), okMsg, caller(1, 0), records...)
 	}
 }
 
