@@ -1,6 +1,6 @@
-module github.com/imakiri/witness/observers/stdlog
+module github.com/imakiri/adapters/log
 
-go 1.23.1
+go 1.23.3
 
 require (
 	github.com/gofrs/uuid/v5 v5.3.0
