@@ -17,3 +17,7 @@ func (r record) Name() string {
 func (r record) String() string {
 	return r.value
 }
+
+//type Source interface {
+//	Record() Record
+//}
