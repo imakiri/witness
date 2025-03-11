@@ -124,7 +124,7 @@ func (r Records) Name() string {
 		s.WriteRune(',')
 		s.WriteRune(' ')
 	}
-	return s.String()[:s.Len()-2]
+	return s.String()[:max(s.Len()-2, 0)]
 }
 
 func (r Records) String() string {
@@ -135,7 +135,7 @@ func (r Records) String() string {
 		s.WriteString(r[i].String())
 		s.WriteRune('\n')
 	}
-	return s.String()[:s.Len()-1]
+	return s.String()[:max(s.Len()-1, 0)]
 }
 
 func (r Records) WithRecords(records ...Record) Records {
