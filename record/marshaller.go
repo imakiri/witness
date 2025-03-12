@@ -39,7 +39,7 @@ func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, record
 	case reflect.Float32, reflect.Float64:
 		return append(records, Float(key, v.Float()))
 	case reflect.Pointer, reflect.Interface:
-		return append(records, m.marshal(key, depth, v.Elem(), records)...)
+		return m.marshal(key, depth, v.Elem(), records)
 	case reflect.Struct:
 		if v.NumField() == 0 {
 			return append(records, String(key, "{}"))
