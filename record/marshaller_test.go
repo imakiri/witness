@@ -21,7 +21,9 @@ func Test(t *testing.T) {
 		Buzz: make(chan error),
 	}
 
-	fmt.Println(marshaller.Marshal("testStruct1", testStruct1))
+	for _, r := range marshaller.Marshal("testStruct1", testStruct1) {
+		fmt.Println(r.Name(), r.String())
+	}
 
 	type TestStruct2 struct {
 		TestStruct1
@@ -33,6 +35,8 @@ func Test(t *testing.T) {
 		A:           []uint{1, 4},
 		M:           map[int]struct{}{2: {}, 7: {}},
 	}
+	for _, r := range marshaller.Marshal("testStruct2", testStruct2) {
+		fmt.Println(r.Name(), r.String())
+	}
 
-	fmt.Println(marshaller.Marshal("testStruct2", testStruct2))
 }

@@ -7,8 +7,8 @@ import (
 )
 
 func TestCaller(t *testing.T) {
-	var name, at = caller(0, 0)
-	fmt.Println(name, at)
+	var name = caller(0, 0)
+	fmt.Println(name)
 	require.EqualValues(t, "github.com/imakiri/witness.TestCaller", name)
 
 	var i = testFoo(t, 4)
@@ -18,11 +18,11 @@ func TestCaller(t *testing.T) {
 func testFoo(t *testing.T, i int) int {
 	defer func() {
 		func() {
-			var name, at = caller(1, 0)
-			fmt.Println(name, at)
+			var name = caller(1, 0)
+			fmt.Println(name)
 			require.EqualValues(t, "github.com/imakiri/witness.testFoo", name)
-			name, at = caller(1, 1)
-			fmt.Println(name, at)
+			name = caller(1, 1)
+			fmt.Println(name)
 			require.EqualValues(t, "github.com/imakiri/witness.TestCaller", name)
 		}()
 		require.EqualValues(t, 1, 1)

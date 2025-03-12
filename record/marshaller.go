@@ -16,19 +16,17 @@ type Marshaller[F Formatter] struct {
 	KeyFormatter F
 }
 
-func (m Marshaller[F]) Marshal(key string, value any) Records {
+func (m Marshaller[F]) Marshal(key string, value any) []Record {
 	return m.marshal(key, 0, reflect.ValueOf(value), nil)
 }
 
-func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, records Records) Records {
+func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, records []Record) []Record {
 	if depth >= m.MaxDepth {
 		return records
 	} else {
 		depth++
 	}
 	switch v.Kind() {
-	case reflect.Pointer, reflect.Interface:
-		return append(records, m.marshal(key, depth, v.Elem(), records)...)
 	case reflect.String:
 		return append(records, String(key, v.String()))
 	case reflect.Int, reflect.Int64, reflect.Int8, reflect.Int16, reflect.Int32:
@@ -39,12 +37,15 @@ func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, record
 		return append(records, Bool(key, v.Bool()))
 	case reflect.Float32, reflect.Float64:
 		return append(records, Float(key, v.Float()))
+	case reflect.Pointer, reflect.Interface:
+		return append(records, m.marshal(key, depth, v.Elem(), records)...)
 	case reflect.Struct:
 		if v.NumField() == 0 {
 			return append(records, String(key, "{}"))
 		}
 		for i := 0; i < v.NumField(); i++ {
-			records = m.marshal(m.KeyFormatter.Structure(key, v.Type().Field(i).Name), depth, v.Field(i), records)
+			var fieldKey = m.KeyFormatter.Structure(key, v.Type().Field(i).Name)
+			records = m.marshal(fieldKey, depth, v.Field(i), records)
 		}
 		return records
 	case reflect.Map:

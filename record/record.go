@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strconv"
-	"strings"
 )
 
 type Record struct {
@@ -113,31 +112,4 @@ func Bytes(name string, value []byte) Record {
 		name:  name,
 		value: base64.StdEncoding.EncodeToString(value),
 	}
-}
-
-type Records []Record
-
-func (r Records) Name() string {
-	var s strings.Builder
-	for i := range r {
-		s.WriteString(r[i].Name())
-		s.WriteRune(',')
-		s.WriteRune(' ')
-	}
-	return s.String()[:max(s.Len()-2, 0)]
-}
-
-func (r Records) String() string {
-	var s strings.Builder
-	for i := range r {
-		s.WriteString(r[i].Name())
-		s.WriteRune(':')
-		s.WriteString(r[i].String())
-		s.WriteRune('\n')
-	}
-	return s.String()[:max(s.Len()-1, 0)]
-}
-
-func (r Records) WithRecords(records ...Record) Records {
-	return append(r, records...)
 }
