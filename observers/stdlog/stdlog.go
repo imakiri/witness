@@ -41,16 +41,14 @@ func (o *Observer) Observe(ctx context.Context, spanIDs []uuid.UUID, eventType w
 	//var eventValueSpace = strings.Repeat(" ", o.maxEventValueLength-utf8.RuneCountInString(eventValue))
 	o.mu.Unlock()
 
-	var stringRecords []byte
-	stringRecords = append(stringRecords, "{"...)
+	var stringRecords strings.Builder
 	for _, r := range records {
-		stringRecords = append(stringRecords, r.Name()...)
-		stringRecords = append(stringRecords, ": \""...)
-		stringRecords = append(stringRecords, r.String()...)
-		stringRecords = append(stringRecords, "\", "...)
+		stringRecords.WriteString("\n\t")
+		stringRecords.WriteString(r.Name())
+		stringRecords.WriteString(": \"")
+		stringRecords.WriteString(r.String())
+		stringRecords.WriteString("\"")
 	}
-	stringRecords = stringRecords[:max(len(stringRecords)-2, 1)]
-	stringRecords = append(stringRecords, "}"...)
 	var stringSpanIDs string
 	for i := range spanIDs {
 		stringSpanIDs += base64.StdEncoding.EncodeToString(spanIDs[i].Bytes())
@@ -58,5 +56,5 @@ func (o *Observer) Observe(ctx context.Context, spanIDs []uuid.UUID, eventType w
 	}
 	stringSpanIDs = stringSpanIDs[:len(stringSpanIDs)-1]
 	log.Printf("%s %s[%s%s] %s%s [%s]%s %s", eventCaller, eventCallerSpace, stringSpanIDs, strings.Repeat(" ", 25*max(2-len(spanIDs), 0)),
-		eventType, eventTypeSpace, eventName, eventNameSpace, string(stringRecords))
+		eventType, eventTypeSpace, eventName, eventNameSpace, stringRecords.String())
 }
