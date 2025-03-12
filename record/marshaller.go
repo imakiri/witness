@@ -1,6 +1,7 @@
 package record
 
 import (
+	"github.com/imakiri/witness"
 	"reflect"
 )
 
@@ -16,11 +17,11 @@ type Marshaller[F Formatter] struct {
 	KeyFormatter F
 }
 
-func (m Marshaller[F]) Marshal(key string, value any) []Record {
+func (m Marshaller[F]) Marshal(key string, value any) []witness.Record {
 	return m.marshal(key, 0, reflect.ValueOf(value), nil)
 }
 
-func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, records []Record) []Record {
+func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, records []witness.Record) []witness.Record {
 	if depth >= m.MaxDepth {
 		return records
 	} else {
