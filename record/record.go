@@ -62,18 +62,25 @@ func Float(name string, value float64) Record {
 }
 
 type NamedStringer struct {
-	name string
-	fmt.Stringer
+	name     string
+	stringer fmt.Stringer
 }
 
 func (r NamedStringer) Name() string {
 	return r.name
 }
 
+func (r NamedStringer) String() string {
+	if r.stringer != nil {
+		return r.stringer.String()
+	}
+	return ""
+}
+
 func Stringer(name string, value fmt.Stringer) NamedStringer {
 	return NamedStringer{
 		name:     name,
-		Stringer: value,
+		stringer: value,
 	}
 }
 
