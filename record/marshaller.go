@@ -27,7 +27,7 @@ func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, record
 		depth++
 	}
 	switch v.Kind() {
-	case reflect.Pointer:
+	case reflect.Pointer, reflect.Interface:
 		return append(records, m.marshal(key, depth, v.Elem(), records)...)
 	case reflect.String:
 		return append(records, String(key, v.String()))
