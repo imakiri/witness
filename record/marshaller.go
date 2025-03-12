@@ -1,6 +1,7 @@
 package record
 
 import (
+	"fmt"
 	"github.com/imakiri/witness"
 	"reflect"
 )
@@ -27,6 +28,10 @@ func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, record
 	} else {
 		depth++
 	}
+	if v.Type().Implements(reflect.TypeFor[fmt.Stringer]()) {
+		return append(records, Stringer(key, (v.Interface()).(fmt.Stringer)))
+	}
+
 	switch v.Kind() {
 	case reflect.String:
 		return append(records, String(key, v.String()))
