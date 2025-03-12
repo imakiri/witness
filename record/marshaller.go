@@ -28,6 +28,11 @@ func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, record
 	} else {
 		depth++
 	}
+
+	if !v.IsValid() {
+		return append(records, Stringer(key, v))
+	}
+
 	if v.Type().Implements(reflect.TypeFor[fmt.Stringer]()) {
 		return append(records, Stringer(key, (v.Interface()).(fmt.Stringer)))
 	}
