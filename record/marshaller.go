@@ -14,8 +14,9 @@ type Formatter interface {
 }
 
 type Marshaller[F Formatter] struct {
-	MaxDepth     uint64
-	KeyFormatter F
+	MaxDepth       uint64
+	KeyFormatter   F
+	PreferStringer bool
 }
 
 func (m Marshaller[F]) Marshal(key string, value any, prefix ...witness.Record) []witness.Record {
@@ -33,7 +34,7 @@ func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, record
 		return append(records, Stringer(key, v))
 	}
 
-	if v.Type().Implements(reflect.TypeFor[fmt.Stringer]()) {
+	if m.PreferStringer && v.Type().Implements(reflect.TypeFor[fmt.Stringer]()) {
 		return append(records, Stringer(key, (v.Interface()).(fmt.Stringer)))
 	}
 
