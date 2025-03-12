@@ -17,8 +17,8 @@ type Marshaller[F Formatter] struct {
 	KeyFormatter F
 }
 
-func (m Marshaller[F]) Marshal(key string, value any) []witness.Record {
-	return m.marshal(key, 0, reflect.ValueOf(value), nil)
+func (m Marshaller[F]) Marshal(key string, value any, prefix ...witness.Record) []witness.Record {
+	return append(prefix, m.marshal(key, 0, reflect.ValueOf(value), nil)...)
 }
 
 func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, records []witness.Record) []witness.Record {
