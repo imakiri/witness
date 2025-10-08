@@ -2,6 +2,7 @@ package witness
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/gofrs/uuid/v5"
 )
@@ -38,8 +39,12 @@ func Debug(ctx context.Context, msg string, records ...Record) {
 	From(ctx).Observe(ctx, EventTypeLogDebug(), msg, caller(1, 0), records...)
 }
 
-func Error(ctx context.Context, msg string, err error, records ...Record) {
+func Error(ctx context.Context, msg string, err error, records ...Record) error {
 	From(ctx).Observe(ctx, EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
+	if err != nil {
+		return fmt.Errorf("%s: %w", msg, err)
+	}
+	return errors.New(msg)
 }
 
 func ErrorOrInfo(ctx context.Context, okMsg, errMsg string, err error, records ...Record) {
@@ -50,20 +55,36 @@ func ErrorOrInfo(ctx context.Context, okMsg, errMsg string, err error, records .
 	}
 }
 
-func ErrorStorage(ctx context.Context, msg string, err error, records ...Record) {
+func ErrorStorage(ctx context.Context, msg string, err error, records ...Record) error {
 	From(ctx).Observe(ctx, EventTypeLogErrorStorage(), msg, caller(1, 0), appendError(records, err)...)
+	if err != nil {
+		return fmt.Errorf("%s: %w", msg, err)
+	}
+	return errors.New(msg)
 }
 
-func ErrorNetwork(ctx context.Context, msg string, err error, records ...Record) {
+func ErrorNetwork(ctx context.Context, msg string, err error, records ...Record) error {
 	From(ctx).Observe(ctx, EventTypeLogErrorNetwork(), msg, caller(1, 0), appendError(records, err)...)
+	if err != nil {
+		return fmt.Errorf("%s: %w", msg, err)
+	}
+	return errors.New(msg)
 }
 
-func ErrorExternal(ctx context.Context, msg string, err error, records ...Record) {
+func ErrorExternal(ctx context.Context, msg string, err error, records ...Record) error {
 	From(ctx).Observe(ctx, EventTypeLogErrorExternal(), msg, caller(1, 0), appendError(records, err)...)
+	if err != nil {
+		return fmt.Errorf("%s: %w", msg, err)
+	}
+	return errors.New(msg)
 }
 
-func ErrorInternal(ctx context.Context, msg string, err error, records ...Record) {
+func ErrorInternal(ctx context.Context, msg string, err error, records ...Record) error {
 	From(ctx).Observe(ctx, EventTypeLogErrorInternal(), msg, caller(1, 0), appendError(records, err)...)
+	if err != nil {
+		return fmt.Errorf("%s: %w", msg, err)
+	}
+	return errors.New(msg)
 }
 
 func Span(ctx context.Context, spanName string, records ...Record) (context.Context, Finish) {
