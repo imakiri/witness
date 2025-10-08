@@ -39,7 +39,11 @@ func Debug(ctx context.Context, msg string, records ...Record) {
 	From(ctx).Observe(ctx, EventTypeLogDebug(), msg, caller(1, 0), records...)
 }
 
-func Error(ctx context.Context, msg string, err error, records ...Record) error {
+func Error(ctx context.Context, msg string, err error, records ...Record) {
+	From(ctx).Observe(ctx, EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
+}
+
+func ErrorRF(ctx context.Context, msg string, err error, records ...Record) error {
 	From(ctx).Observe(ctx, EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
@@ -55,7 +59,11 @@ func ErrorOrInfo(ctx context.Context, okMsg, errMsg string, err error, records .
 	}
 }
 
-func ErrorStorage(ctx context.Context, msg string, err error, records ...Record) error {
+func ErrorStorage(ctx context.Context, msg string, err error, records ...Record) {
+	From(ctx).Observe(ctx, EventTypeLogErrorStorage(), msg, caller(1, 0), appendError(records, err)...)
+}
+
+func ErrorStorageRF(ctx context.Context, msg string, err error, records ...Record) error {
 	From(ctx).Observe(ctx, EventTypeLogErrorStorage(), msg, caller(1, 0), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
@@ -63,7 +71,11 @@ func ErrorStorage(ctx context.Context, msg string, err error, records ...Record)
 	return errors.New(msg)
 }
 
-func ErrorNetwork(ctx context.Context, msg string, err error, records ...Record) error {
+func ErrorNetwork(ctx context.Context, msg string, err error, records ...Record) {
+	From(ctx).Observe(ctx, EventTypeLogErrorNetwork(), msg, caller(1, 0), appendError(records, err)...)
+}
+
+func ErrorNetworkRF(ctx context.Context, msg string, err error, records ...Record) error {
 	From(ctx).Observe(ctx, EventTypeLogErrorNetwork(), msg, caller(1, 0), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
@@ -71,7 +83,11 @@ func ErrorNetwork(ctx context.Context, msg string, err error, records ...Record)
 	return errors.New(msg)
 }
 
-func ErrorExternal(ctx context.Context, msg string, err error, records ...Record) error {
+func ErrorExternal(ctx context.Context, msg string, err error, records ...Record) {
+	From(ctx).Observe(ctx, EventTypeLogErrorExternal(), msg, caller(1, 0), appendError(records, err)...)
+}
+
+func ErrorExternalRF(ctx context.Context, msg string, err error, records ...Record) error {
 	From(ctx).Observe(ctx, EventTypeLogErrorExternal(), msg, caller(1, 0), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
@@ -79,7 +95,11 @@ func ErrorExternal(ctx context.Context, msg string, err error, records ...Record
 	return errors.New(msg)
 }
 
-func ErrorInternal(ctx context.Context, msg string, err error, records ...Record) error {
+func ErrorInternal(ctx context.Context, msg string, err error, records ...Record) {
+	From(ctx).Observe(ctx, EventTypeLogErrorInternal(), msg, caller(1, 0), appendError(records, err)...)
+}
+
+func ErrorInternalRF(ctx context.Context, msg string, err error, records ...Record) error {
 	From(ctx).Observe(ctx, EventTypeLogErrorInternal(), msg, caller(1, 0), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
