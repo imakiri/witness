@@ -135,11 +135,11 @@ func SpanFinish(ctx context.Context, spanID uuid.UUID, spanName string, records 
 //	var c = From(ctx)
 //	var spanID = uuid.Must(uuid.NewV7())
 //	var spanIDs = []uuid.UUID{c.spanIDs, spanID}
-//	c.Observer().Observe(ctx, spanIDs, EventTypeSpanServiceBegin(), serviceName, caller(1, 0), records...)
+//	c.Observer().Observe(ctx, spanIDs, EventTypeSpanServiceStart(), serviceName, caller(1, 0), records...)
 //	c.spanIDs = spanID
 //	return c.To(ctx), func(records ...Record) {
 //		spanIDs[0], spanIDs[1] = spanIDs[1], spanIDs[0]
-//		c.Observer().Observe(ctx, spanIDs, EventTypeSpanServiceEnd(), serviceName, caller(0, 1), records...)
+//		c.Observer().Observe(ctx, spanIDs, EventTypeSpanServiceFinish(), serviceName, caller(0, 1), records...)
 //	}
 //}
 //
@@ -189,3 +189,17 @@ func Instance(ctx context.Context, observer Observer, instanceName string, insta
 		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInstanceOffline(), instanceName, caller(1, 0), append(records, recordVersion)...)
 	}
 }
+
+//
+//func Worker(ctx context.Context, workerName string, records ...Record) (context.Context, Finish) {
+//	var c = From(ctx)
+//	c = c.Join(Context{
+//		observer: c.observer,
+//		spanIDs:  []uuid.UUID{uuid.Must(uuid.NewV7())},
+//	})
+//
+//	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanWorkerStart(), workerName, caller(1, 0), records...)
+//	return With(ctx, c), func(records ...Record) {
+//		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanWorkerFinish(), workerName, caller(1, 0), records...)
+//	}
+//}

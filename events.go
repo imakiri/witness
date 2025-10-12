@@ -59,8 +59,8 @@ var events = []EventType{
 	EventTypeSpanFinish(),
 	EventTypeSpanInstanceOnline(),
 	EventTypeSpanInstanceOffline(),
-	EventTypeSpanServiceBegin(),
-	EventTypeSpanServiceEnd(),
+	EventTypeSpanServiceStart(),
+	EventTypeSpanServiceFinish(),
 	EventTypeSpanInternalMessageSent(),
 	EventTypeSpanInternalMessageReceived(),
 	EventTypeSpanExternalMessageSent(),
@@ -104,13 +104,13 @@ func EventTypeMetric() EventType {
 func EventTypeSpanStart() EventType {
 	return EventType{
 		i: 10,
-		s: "span:start",
+		s: "span:general:start",
 	}
 }
 func EventTypeSpanFinish() EventType {
 	return EventType{
 		i: -10,
-		s: "span:finish",
+		s: "span:general:finish",
 	}
 }
 func EventTypeSpanInstanceOnline() EventType {
@@ -126,16 +126,28 @@ func EventTypeSpanInstanceOffline() EventType {
 	}
 }
 
-func EventTypeSpanServiceBegin() EventType {
+func EventTypeSpanServiceStart() EventType {
 	return EventType{
 		i: 12,
-		s: "span:service:begin",
+		s: "span:service:start",
 	}
 }
-func EventTypeSpanServiceEnd() EventType {
+func EventTypeSpanServiceFinish() EventType {
 	return EventType{
 		i: -12,
-		s: "span:service:end",
+		s: "span:service:finish",
+	}
+}
+func EventTypeSpanWorkerStart() EventType {
+	return EventType{
+		i: 13,
+		s: "span:worker:start",
+	}
+}
+func EventTypeSpanWorkerFinish() EventType {
+	return EventType{
+		i: -13,
+		s: "span:worker:finish",
 	}
 }
 

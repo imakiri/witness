@@ -25,11 +25,11 @@ func (c Context) SpanIDs() []uuid.UUID {
 	return c.spanIDs
 }
 
-func (c Context) Join(cts ...context.Context) Context {
+func (c Context) Join(cts ...Context) Context {
 	var spanIDs = make([]uuid.UUID, len(c.spanIDs), len(c.spanIDs)+len(cts))
 	copy(spanIDs, c.spanIDs)
 	for _, ctx := range cts {
-		spanIDs = append(spanIDs, From(ctx).SpanIDs()...)
+		spanIDs = append(spanIDs, ctx.SpanIDs()...)
 	}
 	slices.SortFunc(spanIDs, func(a, b uuid.UUID) int {
 		return bytes.Compare(a[:], b[:])
@@ -62,4 +62,12 @@ func From(ctx context.Context) Context {
 		return cs
 	}
 	return Context{observer: NilObserver{}}
+}
+
+func Join(ctx context.Context, cts ...context.Context) context.Context {
+	var contexts = make([]Context, len(cts))
+	for i := range cts {
+		contexts[i] = From(cts[i])
+	}
+	return From(ctx).Join(contexts...).To(ctx)
 }
