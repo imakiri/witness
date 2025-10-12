@@ -89,8 +89,7 @@ func (o *Observer) worker() {
 				break collection
 			case <-ticker:
 				break collection
-			default:
-				var event = <-o.observeCh
+			case event := <-o.observeCh:
 				batch.Queue("INSERT INTO witness.events (event_id, event_date, event_type, event_name, event_caller) VALUES ($1, $2, $3, $4, $5)",
 					event.EventID, event.EventDate, event.EventType, event.EventName, event.EventCaller).Exec(func(ct pgconn.CommandTag) error {
 					if !ct.Insert() || ct.RowsAffected() != 1 {
@@ -130,15 +129,15 @@ func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate tim
 	select {
 	case <-o.done:
 		return
-	case o.observeCh <- Event{
-		SpanIDs:     spanIDs,
-		EventID:     eventID,
-		EventDate:   eventDate,
-		EventType:   eventType,
-		EventName:   eventName,
-		EventCaller: eventCaller,
-		Records:     records,
-	}:
-		// OK
+	default:
+		o.observeCh <- Event{
+			SpanIDs:     spanIDs,
+			EventID:     eventID,
+			EventDate:   eventDate,
+			EventType:   eventType,
+			EventName:   eventName,
+			EventCaller: eventCaller,
+			Records:     records,
+		}
 	}
 }
