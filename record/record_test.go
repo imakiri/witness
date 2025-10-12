@@ -1,8 +1,6 @@
 package record
 
 import (
-	"bytes"
-	"fmt"
 	"github.com/stretchr/testify/require"
 	"os"
 	"testing"
@@ -36,9 +34,10 @@ func TestStruct1(t *testing.T) {
 	}
 
 	var records = marshaller.Marshal("test", s)
-	var buf = new(bytes.Buffer)
+	var buf []byte
 	for _, record := range records {
-		fmt.Fprintln(buf, record.AppendKey(), record.AppendValue())
+		buf = record.AppendKey(buf)
+		buf = record.AppendValue(buf)
 	}
 
 	const expected = `test.Foo 12
@@ -48,8 +47,6 @@ test.testStruct2.A 123
 test.testStruct2.T[0] 8
 test.testStruct2.T[1] 98
 `
-	var actual = buf.String()
-	buf.WriteTo(os.Stdout)
-
-	require.Equal(t, expected, actual)
+	_, _ = os.Stdout.Write(buf)
+	require.Equal(t, expected, string(buf))
 }

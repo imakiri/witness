@@ -34,12 +34,12 @@ func main() {
 	}
 	request.Header.Set("X-Message", msgID.String())
 
-	witness.ExternalMessageSent(ctx, msgID, "google request")
+	//witness.ExternalMessageSent(ctx, msgID, "google request")
 	response, err := client.Do(request)
 	if err != nil {
 		log.Fatalln("client.Do(request) failed with error:", err)
 	}
-	witness.ExternalMessageReceived(ctx, msgID, "google response", record.Int("status_code", response.StatusCode))
+	//witness.ExternalMessageReceived(ctx, msgID, "google response", record.Int("status_code", response.StatusCode))
 	if response.StatusCode != http.StatusOK {
 		log.Fatalln("client.Do(request) failed with code:", response.StatusCode)
 	}
