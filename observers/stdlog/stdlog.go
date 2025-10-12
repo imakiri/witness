@@ -1,18 +1,19 @@
 package stdlog
 
 import (
-	"context"
 	"encoding/base64"
 	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/record"
-	"log"
+	"os"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 )
 
 type Observer struct {
+	bufPool              *sync.Pool
 	mu                   *sync.Mutex
 	maxEventNameLength   int
 	maxEventValueLength  int
@@ -21,15 +22,20 @@ type Observer struct {
 }
 
 func NewObserver() *Observer {
+	var bufPool = new(sync.Pool)
+	bufPool.New = func() any {
+		return make([]byte, 0, 256)
+	}
 	return &Observer{
-		mu: new(sync.Mutex),
+		bufPool: bufPool,
+		mu:      new(sync.Mutex),
 		//maxEventNameLength: 8,
 		maxEventValueLength: 8,
 		formatter:           record.DefaultFormatter{},
 	}
 }
 
-func (o *Observer) Observe(ctx context.Context, spanIDs []uuid.UUID, eventType witness.EventType, eventName string, eventCaller string, records ...witness.Record) {
+func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate time.Time, eventType witness.EventType, eventName string, eventCaller string, records ...witness.Record) {
 
 	o.mu.Lock()
 	o.maxEventCallerLength = max(o.maxEventCallerLength, utf8.RuneCountInString(eventCaller))
@@ -41,20 +47,38 @@ func (o *Observer) Observe(ctx context.Context, spanIDs []uuid.UUID, eventType w
 	//var eventValueSpace = strings.Repeat(" ", o.maxEventValueLength-utf8.RuneCountInString(eventValue))
 	o.mu.Unlock()
 
-	var stringRecords strings.Builder
-	for _, r := range records {
-		stringRecords.WriteString("\n\t")
-		stringRecords.WriteString(r.Name())
-		stringRecords.WriteString(": \"")
-		stringRecords.WriteString(r.String())
-		stringRecords.WriteString("\"")
+	var buf = o.bufPool.Get().([]byte)
+	buf = buf[:0]
+	buf = append(buf, '\n')
+	buf = eventDate.AppendFormat(buf, time.RFC3339Nano)
+	buf = append(buf, ' ')
+	buf = base64.StdEncoding.AppendEncode(buf, eventID.Bytes())
+	buf = append(buf, ' ')
+	buf = append(buf, eventCaller...)
+	buf = append(buf, eventCallerSpace...)
+	buf = append(buf, ' ')
+	buf = append(buf, eventType.String()...)
+	buf = append(buf, eventTypeSpace...)
+	buf = append(buf, ' ')
+	buf = append(buf, eventName...)
+	buf = append(buf, eventNameSpace...)
+	buf = append(buf, ' ')
+	buf = append(buf, '[')
+	for i, sid := range spanIDs {
+		if i != 0 {
+			buf = append(buf, ' ')
+		}
+		buf = base64.StdEncoding.AppendEncode(buf, sid.Bytes())
 	}
-	var stringSpanIDs string
-	for i := range spanIDs {
-		stringSpanIDs += base64.StdEncoding.EncodeToString(spanIDs[i].Bytes())
-		stringSpanIDs += " "
+	buf = append(buf, ']')
+	for _, rcd := range records {
+		buf = append(buf, "\n\t"...)
+		buf = append(buf, rcd.Name()...)
+		buf = append(buf, ": \""...)
+		buf = append(buf, rcd.String()...)
+		buf = append(buf, "\""...)
 	}
-	stringSpanIDs = stringSpanIDs[:len(stringSpanIDs)-1]
-	log.Printf("%s %s[%s%s] %s%s [%s]%s %s", eventCaller, eventCallerSpace, stringSpanIDs, strings.Repeat(" ", 25*max(2-len(spanIDs), 0)),
-		eventType, eventTypeSpace, eventName, eventNameSpace, stringRecords.String())
+
+	_, _ = os.Stdout.Write(buf)
+	o.bufPool.Put(buf)
 }

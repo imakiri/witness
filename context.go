@@ -1,34 +1,47 @@
 package witness
 
 import (
+	"bytes"
 	"context"
 	"github.com/gofrs/uuid/v5"
+	"slices"
+	"time"
 )
 
 type Context struct {
 	observer Observer
-	spanID   uuid.UUID
+	spanIDs  []uuid.UUID
 }
 
 func (c Context) IsNil() bool {
-	return c.observer == nil || c.spanID == uuid.Nil
+	return c.observer == nil || c.spanIDs == nil
 }
 
 func (c Context) Observer() Observer {
 	return c.observer
 }
 
-func (c Context) SpanID() uuid.UUID {
-	return c.spanID
+func (c Context) SpanIDs() []uuid.UUID {
+	return c.spanIDs
 }
 
-func (c Context) WithSpanID(spanID uuid.UUID) Context {
-	c.spanID = spanID
-	return c
+func (c Context) Join(cts ...context.Context) Context {
+	var spanIDs = make([]uuid.UUID, len(c.spanIDs), len(c.spanIDs)+len(cts))
+	copy(spanIDs, c.spanIDs)
+	for _, ctx := range cts {
+		spanIDs = append(spanIDs, From(ctx).SpanIDs()...)
+	}
+	slices.SortFunc(spanIDs, func(a, b uuid.UUID) int {
+		return bytes.Compare(a[:], b[:])
+	})
+	return Context{
+		observer: c.observer,
+		spanIDs:  slices.Clone(slices.Compact(spanIDs)),
+	}
 }
 
-func (c Context) Observe(ctx context.Context, eventType EventType, eventName string, eventCaller string, records ...Record) {
-	c.observer.Observe(ctx, []uuid.UUID{c.spanID}, eventType, eventName, eventCaller, records...)
+func (c Context) Observe(eventID uuid.UUID, eventDate time.Time, eventType EventType, eventName string, eventCaller string, records ...Record) {
+	c.observer.Observe(c.spanIDs, eventID, eventDate, eventType, eventName, eventCaller, records...)
 }
 
 type Finish func(records ...Record)

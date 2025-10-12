@@ -9,28 +9,24 @@ CREATE TABLE witness.events
     event_caller varchar(127) NOT NULL
 );
 
-CREATE UNIQUE INDEX events_event_id ON witness.events (event_id DESC);
+CREATE INDEX events_event_lookup ON witness.events (event_date DESC, event_type, event_name);
 
 CREATE TABLE witness.spans
 (
-    event_id       uuid      NOT NULL REFERENCES witness.events (event_id),
---     event_date     timestamp NOT NULL DEFAULT NOW(),
-    parent_span_id uuid      NOT NULL,
-    child_span_id  uuid
+    event_id uuid NOT NULL REFERENCES witness.events (event_id),
+    span_id  uuid NOT NULL
 );
 
-CREATE INDEX spans_event_id ON witness.spans (event_id DESC);
-CREATE INDEX spans_span_id ON witness.spans (child_span_id DESC NULLS LAST) INCLUDE (parent_span_id);
+CREATE UNIQUE INDEX spans_lookup ON witness.spans (event_id DESC, span_id DESC);
 
 CREATE TABLE witness.records
 (
-    event_id     uuid      NOT NULL REFERENCES witness.events (event_id),
---     event_date   timestamp NOT NULL DEFAULT NOW(),
-    record_name  varchar(127),
+    event_id     uuid NOT NULL REFERENCES witness.events (event_id),
+    record_key   varchar(127),
     record_value varchar(1022)
 );
 
-CREATE INDEX records_event_id ON witness.records (event_id DESC);
+CREATE INDEX records_lookup ON witness.records (event_id DESC, record_key);
 
 -- -- list all span names for last 2 days
 -- SELECT e.event_name
