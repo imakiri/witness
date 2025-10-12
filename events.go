@@ -47,6 +47,10 @@ func (e EventType) String() string {
 	return e.s
 }
 
+func (e EventType) Append(dst []byte) []byte {
+	return append(dst, e.s...)
+}
+
 var events = []EventType{
 	EventTypeMetric(),
 	//EventTypeGeneric(),

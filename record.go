@@ -1,8 +1,8 @@
 package witness
 
 type Record interface {
-	Name() string
-	String() string
+	AppendKey(dst []byte) []byte
+	AppendValue(dst []byte) []byte
 }
 
 type record struct {
@@ -10,10 +10,10 @@ type record struct {
 	value string
 }
 
-func (r record) Name() string {
-	return r.key
+func (r record) AppendKey(dst []byte) []byte {
+	return append(dst, r.key...)
 }
 
-func (r record) String() string {
-	return r.value
+func (r record) AppendValue(dst []byte) []byte {
+	return append(dst, r.value...)
 }

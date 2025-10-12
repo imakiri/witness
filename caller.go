@@ -47,7 +47,7 @@ func caller(skip, extra int) string {
 		if details == nil {
 			return ""
 		}
-		//fmt.Println(details.Name())
+		//fmt.Println(details.AppendKey())
 		if !strings.Contains(details.Name(), ".func") {
 			break
 		}
@@ -61,7 +61,7 @@ func caller(skip, extra int) string {
 	}
 
 	if debug {
-		//fmt.Println("extra", details.Name(), "pc", pc[i+extra])
+		//fmt.Println("extra", details.AppendKey(), "pc", pc[i+extra])
 		var atFile, atLine = details.FileLine(pc[i+extra])
 		var c strings.Builder
 		c.WriteString(atFile)

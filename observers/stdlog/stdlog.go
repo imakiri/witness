@@ -48,7 +48,7 @@ func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate tim
 	o.mu.Unlock()
 
 	var buf = o.bufPool.Get().([]byte)
-	buf = buf[:0]
+	buf = buf[0:0]
 	buf = append(buf, '\n')
 	buf = eventDate.AppendFormat(buf, time.RFC3339Nano)
 	buf = append(buf, ' ')
@@ -57,7 +57,7 @@ func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate tim
 	buf = append(buf, eventCaller...)
 	buf = append(buf, eventCallerSpace...)
 	buf = append(buf, ' ')
-	buf = append(buf, eventType.String()...)
+	buf = eventType.Append(buf)
 	buf = append(buf, eventTypeSpace...)
 	buf = append(buf, ' ')
 	buf = append(buf, eventName...)
@@ -73,9 +73,9 @@ func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate tim
 	buf = append(buf, ']')
 	for _, rcd := range records {
 		buf = append(buf, "\n\t"...)
-		buf = append(buf, rcd.Name()...)
+		buf = rcd.AppendKey(buf)
 		buf = append(buf, ": \""...)
-		buf = append(buf, rcd.String()...)
+		buf = rcd.AppendValue(buf)
 		buf = append(buf, "\""...)
 	}
 

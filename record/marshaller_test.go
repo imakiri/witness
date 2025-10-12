@@ -22,7 +22,10 @@ func Test(t *testing.T) {
 	}
 
 	for _, r := range marshaller.Marshal("testStruct1", testStruct1) {
-		fmt.Println(r.Name(), r.String())
+		var buf []byte
+		buf = r.AppendKey(buf)
+		buf = r.AppendValue(buf)
+		fmt.Println(string(buf))
 	}
 
 	type TestStruct2 struct {
@@ -36,7 +39,10 @@ func Test(t *testing.T) {
 		M:           map[int]struct{}{2: {}, 7: {}},
 	}
 	for _, r := range marshaller.Marshal("testStruct2", testStruct2) {
-		fmt.Println(r.Name(), r.String())
+		var buf []byte
+		buf = r.AppendKey(buf)
+		buf = r.AppendValue(buf)
+		fmt.Println(string(buf))
 	}
 
 }

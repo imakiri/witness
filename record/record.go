@@ -7,116 +7,119 @@ import (
 )
 
 type Record struct {
-	name  string
+	key   string
 	value string
 }
 
-func (r Record) Name() string {
-	return r.name
+func (r Record) AppendKey(dst []byte) []byte {
+	return append(dst, r.key...)
 }
 
-func (r Record) String() string {
-	return r.value
+func (r Record) AppendValue(dst []byte) []byte {
+	return append(dst, r.value...)
 }
 
-func Name(name string) Record {
+func Key(key string) Record {
 	return Record{
-		name:  name,
+		key:   key,
 		value: "",
 	}
 }
 
-func String(name string, value string) Record {
+func String(key string, value string) Record {
 	return Record{
-		name:  name,
+		key:   key,
 		value: value,
 	}
 }
 
-func Int(name string, value int) Record {
+func Int(key string, value int) Record {
 	return Record{
-		name:  name,
+		key:   key,
 		value: strconv.Itoa(value),
 	}
 }
 
-func Integer(name string, value int64) Record {
+func Integer(key string, value int64) Record {
 	return Record{
-		name:  name,
+		key:   key,
 		value: strconv.FormatInt(value, 10),
 	}
 }
 
-func Number(name string, value uint64) Record {
+func Number(key string, value uint64) Record {
 	return Record{
-		name:  name,
+		key:   key,
 		value: strconv.FormatUint(value, 10),
 	}
 }
 
-func Float(name string, value float64) Record {
+func Float(key string, value float64) Record {
 	return Record{
-		name:  name,
+		key:   key,
 		value: strconv.FormatFloat(value, 'e', -1, 64),
 	}
 }
 
 type NamedStringer struct {
-	name     string
+	key      string
 	stringer fmt.Stringer
 }
 
-func (r NamedStringer) Name() string {
-	return r.name
+func (r NamedStringer) AppendKey(dst []byte) []byte {
+	return append(dst, r.key...)
 }
 
-func (r NamedStringer) String() string {
-	if r.stringer != nil {
-		return r.stringer.String()
+func (r NamedStringer) AppendValue(dst []byte) []byte {
+	if r.stringer == nil {
+		return dst
 	}
-	return ""
+	return append(dst, r.stringer.String()...)
 }
 
-func Stringer(name string, value fmt.Stringer) NamedStringer {
+func Stringer(key string, value fmt.Stringer) NamedStringer {
 	return NamedStringer{
-		name:     name,
+		key:      key,
 		stringer: value,
 	}
 }
 
 type ErrorRecord struct {
-	name string
+	key string
 	error
 }
 
-func (r ErrorRecord) Name() string {
-	return r.name
-}
-
-func (r ErrorRecord) String() string {
-	if r.error != nil {
-		return r.Error()
+func (r ErrorRecord) AppendKey(dst []byte) []byte {
+	if r.error == nil {
+		return dst
 	}
-	return "nil"
+	return append(dst, r.key...)
 }
 
-func Error(name string, err error) ErrorRecord {
+func (r ErrorRecord) AppendValue(dst []byte) []byte {
+	if r.error == nil {
+		return dst
+	}
+	return append(dst, r.error.Error()...)
+}
+
+func Error(key string, err error) ErrorRecord {
 	return ErrorRecord{
-		name:  name,
+		key:   key,
 		error: err,
 	}
 }
 
-func Bool(name string, value bool) Record {
+func Bool(key string, value bool) Record {
 	return Record{
-		name:  name,
+		key:   key,
 		value: strconv.FormatBool(value),
 	}
 }
 
-func Bytes(name string, value []byte) Record {
+func Bytes(key string, value []byte) Record {
 	return Record{
-		name:  name,
+		key:   key,
 		value: base64.StdEncoding.EncodeToString(value),
 	}
 }
