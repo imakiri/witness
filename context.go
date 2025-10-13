@@ -44,6 +44,22 @@ func (c Context) Observe(eventID uuid.UUID, eventDate time.Time, eventType Event
 	c.observer.Observe(c.spanIDs, eventID, eventDate, eventType, eventName, eventCaller, records...)
 }
 
+func (c Context) Info(msg string, records ...Record) {
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), msg, caller(1, 0), records...)
+}
+
+func (c Context) Warn(msg string, records ...Record) {
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogWarn(), msg, caller(1, 0), records...)
+}
+
+func (c Context) Debug(msg string, records ...Record) {
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogDebug(), msg, caller(1, 0), records...)
+}
+
+func (c Context) Error(msg string, err error, records ...Record) {
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
+}
+
 type Finish func(records ...Record)
 
 const keyContext = "witness.context:3D3DNvuPg4yxitoS0wG8Q0FpI0AeY9BQ"
