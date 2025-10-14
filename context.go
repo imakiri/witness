@@ -25,6 +25,13 @@ func (c Context) SpanIDs() []uuid.UUID {
 	return c.spanIDs
 }
 
+func NewContext(observer Observer) Context {
+	return Context{
+		observer: observer,
+		spanIDs:  []uuid.UUID{uuid.Must(uuid.NewV7())},
+	}
+}
+
 func (c Context) Join(cts ...Context) Context {
 	var spanIDs = make([]uuid.UUID, len(c.spanIDs), len(c.spanIDs)+len(cts))
 	copy(spanIDs, c.spanIDs)
