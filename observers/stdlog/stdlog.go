@@ -19,20 +19,38 @@ type Observer struct {
 	maxEventValueLength  int
 	maxEventCallerLength int
 	formatter            record.Formatter
+	printCaller          bool
 }
 
-func NewObserver() *Observer {
+type Option func(o *Observer)
+
+func WithPrintCaller(value bool) Option {
+	return func(o *Observer) {
+		o.printCaller = value
+	}
+}
+
+func NewObserver(options ...Option) *Observer {
 	var bufPool = new(sync.Pool)
 	bufPool.New = func() any {
 		return make([]byte, 0, 256)
 	}
-	return &Observer{
+	var o = &Observer{
 		bufPool: bufPool,
 		mu:      new(sync.Mutex),
 		//maxEventNameLength: 8,
 		maxEventValueLength: 8,
 		formatter:           record.DefaultFormatter{},
+		printCaller:         true,
 	}
+	for _, opt := range options {
+		opt(o)
+	}
+	return o
+}
+
+func (o *Observer) appendTime(b []byte, t time.Time) []byte {
+	return t.AppendFormat(b, "2006-01-02T15:04:05.000000000Z07:00")
 }
 
 func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate time.Time, eventType witness.EventType, eventName string, eventCaller string, records ...witness.Record) {
@@ -50,13 +68,15 @@ func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate tim
 	var buf = o.bufPool.Get().([]byte)
 	buf = buf[0:0]
 	buf = append(buf, '\n')
-	buf = eventDate.AppendFormat(buf, time.RFC3339Nano)
+	buf = o.appendTime(buf, eventDate)
 	buf = append(buf, ' ')
 	buf = base64.StdEncoding.AppendEncode(buf, eventID.Bytes())
 	buf = append(buf, ' ')
-	buf = append(buf, eventCaller...)
-	buf = append(buf, eventCallerSpace...)
-	buf = append(buf, ' ')
+	if o.printCaller {
+		buf = append(buf, eventCaller...)
+		buf = append(buf, eventCallerSpace...)
+		buf = append(buf, ' ')
+	}
 	buf = eventType.Append(buf)
 	buf = append(buf, eventTypeSpace...)
 	buf = append(buf, ' ')

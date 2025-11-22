@@ -19,7 +19,7 @@ func foo(ctx context.Context, i int, s string) (re string) {
 
 func TestSpan(t *testing.T) {
 	witness.EnableDebug()
-	var observer = NewObserver()
+	var observer = NewObserver(WithPrintCaller(false))
 	var ctx, finish = witness.Instance(context.Background(), observer, "test_span", "1")
 	defer finish()
 
