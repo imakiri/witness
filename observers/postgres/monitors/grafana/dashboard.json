@@ -1,0 +1,174 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Selected span duration",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "postgres", "uid": "${DS_POSTGRES}"},
+      "fieldConfig": {
+        "defaults": {"unit": "s", "decimals": 3, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}},
+        "overrides": []
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "graphMode": "none", "orientation": "auto", "textMode": "auto"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": {"type": "postgres", "uid": "${DS_POSTGRES}"},
+          "rawQuery": true,
+          "rawSql": "SELECT EXTRACT(EPOCH FROM duration) AS duration_seconds\nFROM witness.span_pairs\nWHERE span_id = '${span_id}'::uuid"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Events under span",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "postgres", "uid": "${DS_POSTGRES}"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "graphMode": "none", "orientation": "auto", "textMode": "auto"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": {"type": "postgres", "uid": "${DS_POSTGRES}"},
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS count\nFROM witness.events e\nJOIN witness.spans s ON s.event_id = e.event_id\nWHERE s.span_id = '${span_id}'::uuid\n  AND $__timeFilter(e.event_date)"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Errors under span",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "postgres", "uid": "${DS_POSTGRES}"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "graphMode": "none", "orientation": "auto", "textMode": "auto"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": {"type": "postgres", "uid": "${DS_POSTGRES}"},
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS errors\nFROM witness.events e\nJOIN witness.spans s ON s.event_id = e.event_id\nWHERE s.span_id = '${span_id}'::uuid\n  AND (e.event_type IN (13, 14) OR e.event_type BETWEEN 100 AND 104)\n  AND $__timeFilter(e.event_date)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Direct children",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "postgres", "uid": "${DS_POSTGRES}"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "graphMode": "none", "orientation": "auto", "textMode": "auto"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": {"type": "postgres", "uid": "${DS_POSTGRES}"},
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS children\nFROM witness.span_children\nWHERE parent_span_id = '${span_id}'::uuid"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Events under span",
+      "gridPos": {"x": 0, "y": 4, "w": 24, "h": 12},
+      "datasource": {"type": "postgres", "uid": "${DS_POSTGRES}"},
+      "options": {"showTime": true, "showLabels": false, "showCommonLabels": false, "wrapLogMessage": true, "prettifyLogMessage": false, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Ascending"},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": {"type": "postgres", "uid": "${DS_POSTGRES}"},
+          "rawQuery": true,
+          "rawSql": "SELECT\n    e.event_date AS \"time\",\n    CASE\n        WHEN e.event_type = 10 THEN 'debug'\n        WHEN e.event_type = 11 THEN 'info'\n        WHEN e.event_type = 12 THEN 'warn'\n        WHEN e.event_type = 13 THEN 'error'\n        WHEN e.event_type = 14 THEN 'critical'\n        WHEN e.event_type BETWEEN 100 AND 104 THEN 'error'\n        WHEN e.event_type BETWEEN 20 AND 29 THEN 'info'\n        WHEN e.event_type BETWEEN -29 AND -20 THEN 'info'\n        ELSE 'info'\n    END AS level,\n    e.event_message AS body,\n    e.event_caller AS caller,\n    etn.event_type_name AS type\nFROM witness.events e\nJOIN witness.spans s ON s.event_id = e.event_id\nLEFT JOIN witness.event_type_names etn ON etn.event_type = e.event_type\nWHERE s.span_id = '${span_id}'::uuid\n  AND $__timeFilter(e.event_date)\nORDER BY e.event_date ASC"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Direct child spans",
+      "gridPos": {"x": 0, "y": 16, "w": 12, "h": 10},
+      "datasource": {"type": "postgres", "uid": "${DS_POSTGRES}"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto"}}, "overrides": [{"matcher": {"id": "byName", "options": "Duration"}, "properties": [{"id": "unit", "value": "µs"}]}]},
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": {"type": "postgres", "uid": "${DS_POSTGRES}"},
+          "rawQuery": true,
+          "rawSql": "SELECT\n    sp.span_name AS \"Name\",\n    sc.child_span_id::text AS \"Span ID\",\n    sp.started_at AS \"Started\",\n    EXTRACT(EPOCH FROM sp.duration) * 1000 AS \"Duration\"\nFROM witness.span_children sc\nJOIN witness.span_pairs sp ON sp.span_id = sc.child_span_id\nWHERE sc.parent_span_id = '${span_id}'::uuid\n  AND $__timeFilter(sp.started_at)\nORDER BY sp.started_at ASC"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Recent root spans",
+      "description": "Spans with no parent in the witness graph. Copy a Span ID into the `span_id` variable to focus the rest of the dashboard on it.",
+      "gridPos": {"x": 12, "y": 16, "w": 12, "h": 10},
+      "datasource": {"type": "postgres", "uid": "${DS_POSTGRES}"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto"}}, "overrides": [{"matcher": {"id": "byName", "options": "Duration"}, "properties": [{"id": "unit", "value": "ms"}]}]},
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "datasource": {"type": "postgres", "uid": "${DS_POSTGRES}"},
+          "rawQuery": true,
+          "rawSql": "SELECT\n    sp.span_name AS \"Name\",\n    sp.span_id::text AS \"Span ID\",\n    sp.started_at AS \"Started\",\n    EXTRACT(EPOCH FROM sp.duration) * 1000 AS \"Duration\"\nFROM witness.span_pairs sp\nWHERE NOT EXISTS (\n    SELECT 1 FROM witness.span_children sc WHERE sc.child_span_id = sp.span_id\n)\n  AND $__timeFilter(sp.started_at)\nORDER BY sp.started_at DESC\nLIMIT 100"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["witness"],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_POSTGRES",
+        "type": "datasource",
+        "label": "Postgres data source",
+        "query": "postgres",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false
+      },
+      {
+        "name": "span_id",
+        "type": "textbox",
+        "label": "Span ID",
+        "query": "00000000-0000-0000-0000-000000000000",
+        "current": {"value": "00000000-0000-0000-0000-000000000000", "text": "00000000-0000-0000-0000-000000000000"},
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Witness — Spans",
+  "uid": "witness-spans",
+  "version": 1,
+  "weekStart": ""
+}
