@@ -81,26 +81,18 @@ func Events() []EventType {
 	return es
 }
 
-func EventTypeMetric() EventType {
-	return EventType{
-		i: 0,
-		s: "metric",
-	}
-}
-
 //	func EventTypeGeneric() EventType {
 //		return EventType{
 //			i: 1,
 //			s: "generic",
 //		}
 //	}
-//
-//	func EventTypeLink() EventType {
-//		return EventType{
-//			i: 2,
-//			s: "link",
-//		}
-//	}
+func EventTypeLink() EventType {
+	return EventType{
+		i: 2,
+		s: "link",
+	}
+}
 func EventTypeSpanStart() EventType {
 	return EventType{
 		i: 10,
@@ -141,20 +133,20 @@ func EventTypeSpanServiceFinish() EventType {
 func EventTypeSpanWorkerStart() EventType {
 	return EventType{
 		i: 13,
-		s: "span:worker:start",
+		s: "span:wait_group:start",
 	}
 }
 func EventTypeSpanWorkerFinish() EventType {
 	return EventType{
 		i: -13,
-		s: "span:worker:finish",
+		s: "span:wait_group:finish",
 	}
 }
 
 // EventTypeSpanInternalMessageSent use when sending message to service within your witness system
 func EventTypeSpanInternalMessageSent() EventType {
 	return EventType{
-		i: 13,
+		i: 14,
 		s: "span:internal_message:sent",
 	}
 }
@@ -162,7 +154,7 @@ func EventTypeSpanInternalMessageSent() EventType {
 // EventTypeSpanInternalMessageReceived use when receiving message from service within your witness system
 func EventTypeSpanInternalMessageReceived() EventType {
 	return EventType{
-		i: -13,
+		i: -14,
 		s: "span:internal_message:received",
 	}
 }
@@ -170,7 +162,7 @@ func EventTypeSpanInternalMessageReceived() EventType {
 // EventTypeSpanExternalMessageSent use when sending message to service outside your witness system
 func EventTypeSpanExternalMessageSent() EventType {
 	return EventType{
-		i: 14,
+		i: 15,
 		s: "span:message_external:sent",
 	}
 }
@@ -178,8 +170,28 @@ func EventTypeSpanExternalMessageSent() EventType {
 // EventTypeSpanExternalMessageReceived use when receiving message from service outside your witness system
 func EventTypeSpanExternalMessageReceived() EventType {
 	return EventType{
-		i: -14,
+		i: -15,
 		s: "span:external_message:received",
+	}
+}
+
+func EventTypeMetric() EventType {
+	return EventType{
+		i: 30,
+		s: "metric",
+	}
+}
+
+func EventTypeMetricCounter() EventType {
+	return EventType{
+		i: 31,
+		s: "metric:counter",
+	}
+}
+func EventTypeMetricHistogram() EventType {
+	return EventType{
+		i: 32,
+		s: "metric:histogram",
 	}
 }
 
