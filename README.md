@@ -36,20 +36,22 @@ Generic script execution:
 | 019e4098-564d-724f-a404-a4186aa9f5ea | 2026-05-19T14:16:33.184Z | span:general:finish | returned from sub-function foo | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e4097-86b7-7584-b87d-07347f21f563 ] |
 | 019e4098-8af2-7eb9-b0ae-78af1482b941 | 2026-05-19T14:16:52.107Z | span:general:finish | returned from function main    | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ]                                       |
 
-Concurrent job processing. Two task handlers run in parallel under main; concurrency is       
-visible only as overlapping event_date ranges on sibling span chains.:
+Concurrent job processing. Two task handlers run in parallel under main:
 
 | event_id                             | event_date               | event_type             | event_message        | event_span_ids                                                                 |
 |--------------------------------------|--------------------------|------------------------|----------------------|--------------------------------------------------------------------------------|
 | 019e4094-0991-7d53-b481-ccb7a206350a | 2026-05-19T14:11:55.897Z | span:general:start     | called main function | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ]                                       |
-| 019e4096-3c7c-7773-ac5d-1fa06d15dc3b | 2026-05-19T14:14:14.144Z | log:info               | repairing   tasks    | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ]                                       |
+| 019e4096-3c7c-7773-ac5d-1fa06d15dc3b | 2026-05-19T14:14:14.144Z | log:info               | preparing tasks      | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ]                                       |
 | 019e4097-14a7-7846-9bdd-a4c2a1147441 | 2026-05-19T14:15:07.801Z | span:wait_group:start  | called task handler  | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e4097-86b7-7584-b87d-07347f21f563 ] |
 | 019e4097-14a7-7846-9bdd-a4c2a1147442 | 2026-05-19T14:15:07.901Z | span:wait_group:start  | called task handler  | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e40a6-4ffd-747f-b070-db87ac5857e6 ] |
 | 019e4098-564d-724f-a404-a4186aa9f5ea | 2026-05-19T14:16:33.184Z | span:wait_group:finish | task done            | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e4097-86b7-7584-b87d-07347f21f563 ] |
 | 019e4098-8af2-7eb9-b0ae-78af1482b941 | 2026-05-19T14:16:52.107Z | span:wait_group:finish | task done            | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e40a6-4ffd-747f-b070-db87ac5857e6 ] |
 | 019e40a6-ecc4-7ef1-949e-c1754431d89b | 2026-05-19T14:32:28.997Z | span:general:finish    | all tasks done       | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ]                                       |
 
-Messaging:
+Messaging. Producer and consumer live under different root spans, linked by a span_id carried in
+the message itself (`019e4097-86b7-7584-b87d-07347f21f563`). A single
+`WHERE 019e4097-86b7-7584-b87d-07347f21f563 = ANY(event_span_ids)` returns both,
+reconnecting the two otherwise-disjoint traces:
 
 | event_id                             | event_date               | event_type          | event_message        | event_span_ids                                                                 |
 |--------------------------------------|--------------------------|---------------------|----------------------|--------------------------------------------------------------------------------|
@@ -60,10 +62,33 @@ Messaging:
 | 019e40bf-41a4-79e6-8224-2d1f67e21073 | 2026-05-19T14:59:02.507Z | link                | message received     | [ 019e40be-e103-70c7-b12f-e249b490194a, 019e4097-86b7-7584-b87d-07347f21f563 ] |
 | 019e40bf-77ec-793c-8705-ca3f4511e23d | 2026-05-19T14:59:18.789Z | span:general:finish | service finishes     | [ 019e40be-e103-70c7-b12f-e249b490194a ]                                       |
 
-Metrics:
+Metrics. The client aggregates over a window and emits one event per window per metric:
 
 | event_id                             | event_date               | event_type          | event_message                 | event_span_ids                           | event_records                                                                    |
 |--------------------------------------|--------------------------|---------------------|-------------------------------|------------------------------------------|----------------------------------------------------------------------------------|
 | 019e4094-0991-7d53-b481-ccb7a206350a | 2026-05-19T14:11:55.897Z | span:general:start  | called main function          | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ] |                                                                                  |
+| 019e4096-3c7c-7773-ac5d-1fa06d15dc3b | 2026-05-19T14:14:14.144Z | metric:counter      | http_requests_total           | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ] | { "window_ms": 60000, "value": 12034, "route": "/users", "status": 200 }         |
 | 019e4096-3c7c-7773-ac5d-1fa06d15dc3b | 2026-05-19T14:14:14.144Z | metric:histogram    | http_request_duration_seconds | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ] | { "window_ms": 60000, "count": 12034, "p50": 0.012, "p95": 0.087, "p99": 0.140 } |
 | 019e40a6-ecc4-7ef1-949e-c1754431d89b | 2026-05-19T14:32:28.997Z | span:general:finish | main returned                 | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ] |                                                                                  |
+
+---
+
+## Propagation
+
+Witness is transport-agnostic. To continue a span on the receiving side of any boundary (HTTP
+request, message queue, gRPC call), the sender places the span_id into a carrier of its choosing
+(HTTP header, message envelope field, gRPC metadata) and the receiver chains it into its own
+witness context. The data model only cares that both sides emit events whose `event_span_ids`
+contain the shared span_id — nothing else is required to reconnect the trace at query time.
+
+## Notes
+
+* A span is a point in the space dimension, not a duration. Events attached to a span_id form a
+  line through time at that point in space. An event has one time value and any number of space
+  values (span_ids) — that is how context connections are made.
+* `span:*:start` and `span:*:finish` are just conventional events that delimit a duration on a
+  span_id. Nothing in the model requires them; a span_id can carry any number of events of any
+  type. Duration, when needed, is computed at query time by pairing the start and finish events
+  on the shared span_id.
+* If a process dies before emitting a finish event, the span is left open, not lost — every event
+  emitted on it is still there. Auto-close is an observer-side concern, not a data-model one.
