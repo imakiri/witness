@@ -1,39 +1,35 @@
-// Package prometheus is a witness Observer that exposes pre-aggregated
-// metric events as Prometheus metrics over HTTP.
+// Package prometheus is a witness Observer that exposes metric events as
+// Prometheus metrics over HTTP.
 //
-// Witness clients are expected to aggregate metrics over a window and emit
-// one event per window per metric (see EventTypeMetricCounter and
-// EventTypeMetricHistogram). This observer accumulates those window deltas
-// into Prometheus-style cumulative metrics and exposes them via a standard
-// /metrics HTTP handler.
+// Metrics to be exposed are declared upfront in Config. Events whose
+// event_message does not match a configured metric name are dropped.
 //
 // Counter events (event_type "metric:counter"):
 //
-//	event_message   -> metric name
-//	record "value"  -> delta to add to the cumulative counter
-//	record "window_ms" (optional) -> ignored, informational
-//	all other records -> Prometheus labels
+//	event_message   -> metric name (must match a configured CounterDef.Name)
+//	record "value"  -> increment delta, added via CounterVec.Add
+//	other records   -> matched against CounterDef.LabelKeys; unknown keys ignored
 //
-// Histogram events (event_type "metric:histogram") are exposed as Prometheus
-// summaries with the pre-computed quantiles carried on the event:
+// Histogram events (event_type "metric:histogram"):
 //
-//	event_message   -> metric name
-//	record "count"  -> delta to add to the cumulative observation count
-//	record "p<N>"   -> quantile N/10^digits (p50 -> 0.5, p999 -> 0.999)
-//	record "sum"    -> optional, added to cumulative sum if present
-//	all other records -> Prometheus labels
+//	event_message   -> metric name (must match a configured HistogramDef.Name)
+//	record "value"  -> single observation, recorded via HistogramVec.Observe
+//	other records   -> matched against HistogramDef.LabelKeys; unknown keys ignored
 //
-// Sum is optional because witness histogram events are not required to
-// carry it; when absent, the exposed _sum stays at zero.
+// Counter and histogram events share the same shape: one event carries one
+// "value" record. A client may emit value=1 per increment, or batch many
+// increments into a single event with a larger value — the observer just
+// adds whatever delta arrives.
+//
+// A configured label that has no matching record on an event is observed
+// with an empty value, mirroring standard Prometheus client behavior.
 package prometheus
 
 import (
-	"math"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -42,21 +38,77 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+type CounterDef struct {
+	Name      string
+	Help      string
+	LabelKeys []string
+}
+
+type HistogramDef struct {
+	Name      string
+	Help      string
+	LabelKeys []string
+	Buckets   []float64 // nil -> prometheus.DefBuckets
+}
+
+type Config struct {
+	Counters   []CounterDef
+	Histograms []HistogramDef
+}
+
 type Observer struct {
-	mu         sync.Mutex
-	counters   map[string]*counterFamily   // key = metric name + sorted label keys
-	histograms map[string]*histogramFamily // key = metric name + sorted label keys
+	counters   map[string]*counterFamily   // key = metric name
+	histograms map[string]*histogramFamily // key = metric name
 	registry   *prometheus.Registry
 }
 
-func NewObserver() *Observer {
+type counterFamily struct {
+	vec       *prometheus.CounterVec
+	labelKeys []string // sorted
+}
+
+type histogramFamily struct {
+	vec       *prometheus.HistogramVec
+	labelKeys []string // sorted
+}
+
+func NewObserver(config Config) (*Observer, error) {
 	o := &Observer{
-		counters:   make(map[string]*counterFamily),
-		histograms: make(map[string]*histogramFamily),
+		counters:   make(map[string]*counterFamily, len(config.Counters)),
+		histograms: make(map[string]*histogramFamily, len(config.Histograms)),
 		registry:   prometheus.NewRegistry(),
 	}
-	o.registry.MustRegister(o)
-	return o
+
+	for _, def := range config.Counters {
+		keys := sortedCopy(def.LabelKeys)
+		vec := prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: def.Name,
+			Help: def.Help,
+		}, keys)
+		if err := o.registry.Register(vec); err != nil {
+			return nil, fmt.Errorf("register counter %q: %w", def.Name, err)
+		}
+		o.counters[def.Name] = &counterFamily{vec: vec, labelKeys: keys}
+	}
+
+	for _, def := range config.Histograms {
+		keys := sortedCopy(def.LabelKeys)
+		buckets := def.Buckets
+		if buckets == nil {
+			buckets = prometheus.DefBuckets
+		}
+		vec := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    def.Name,
+			Help:    def.Help,
+			Buckets: buckets,
+		}, keys)
+		if err := o.registry.Register(vec); err != nil {
+			return nil, fmt.Errorf("register histogram %q: %w", def.Name, err)
+		}
+		o.histograms[def.Name] = &histogramFamily{vec: vec, labelKeys: keys}
+	}
+
+	return o, nil
 }
 
 // Handler returns a Prometheus exposition HTTP handler for this observer's
@@ -71,29 +123,6 @@ func (o *Observer) Registry() *prometheus.Registry {
 	return o.registry
 }
 
-// Describe implements prometheus.Collector. The observer is an "unchecked"
-// collector — metric descriptors are discovered at runtime from incoming
-// events, so no descriptors are emitted here.
-func (o *Observer) Describe(_ chan<- *prometheus.Desc) {}
-
-// Collect implements prometheus.Collector. Called by the Prometheus registry
-// on each scrape.
-func (o *Observer) Collect(ch chan<- prometheus.Metric) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	for _, f := range o.counters {
-		for _, s := range f.series {
-			ch <- prometheus.MustNewConstMetric(f.desc, prometheus.CounterValue, s.value, s.labelValues...)
-		}
-	}
-	for _, f := range o.histograms {
-		for _, s := range f.series {
-			ch <- prometheus.MustNewConstSummary(f.desc, s.count, s.sum, s.quantiles, s.labelValues...)
-		}
-	}
-}
-
 func (o *Observer) Observe(_ []uuid.UUID, _ uuid.UUID, _ time.Time, eventType witness.EventType, eventMessage string, _ string, records ...witness.Record) {
 	switch eventType {
 	case witness.EventTypeMetricCounter():
@@ -103,195 +132,64 @@ func (o *Observer) Observe(_ []uuid.UUID, _ uuid.UUID, _ time.Time, eventType wi
 	}
 }
 
-type counterFamily struct {
-	desc      *prometheus.Desc
-	labelKeys []string
-	series    map[string]*counterSeries // key = joined label values
-}
-
-type counterSeries struct {
-	labelValues []string
-	value       float64
-}
-
-type histogramFamily struct {
-	desc      *prometheus.Desc
-	labelKeys []string
-	series    map[string]*histogramSeries
-}
-
-type histogramSeries struct {
-	labelValues []string
-	count       uint64
-	sum         float64
-	quantiles   map[float64]float64
-}
-
 func (o *Observer) observeCounter(name string, records []witness.Record) {
-	var delta float64
-	labels, deltaFound := splitCounterRecords(records, &delta)
-	if !deltaFound {
+	f, ok := o.counters[name]
+	if !ok {
 		return
 	}
-	labelKeys, labelValues := sortLabels(labels)
-	familyKey := familyKey(name, labelKeys)
-	seriesKey := joinValues(labelValues)
-
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	f, ok := o.counters[familyKey]
+	delta, ok := selectFloat(records, "value")
 	if !ok {
-		f = &counterFamily{
-			desc:      prometheus.NewDesc(name, "witness metric:counter", labelKeys, nil),
-			labelKeys: labelKeys,
-			series:    make(map[string]*counterSeries),
-		}
-		o.counters[familyKey] = f
+		return
 	}
-	s, ok := f.series[seriesKey]
-	if !ok {
-		s = &counterSeries{labelValues: labelValues}
-		f.series[seriesKey] = s
-	}
-	s.value += delta
+	f.vec.WithLabelValues(selectLabelValues(records, f.labelKeys)...).Add(delta)
 }
 
 func (o *Observer) observeHistogram(name string, records []witness.Record) {
-	var countDelta uint64
-	var sumDelta float64
-	quantiles := make(map[float64]float64)
-	labels, countFound := splitHistogramRecords(records, &countDelta, &sumDelta, quantiles)
-	if !countFound && len(quantiles) == 0 {
+	f, ok := o.histograms[name]
+	if !ok {
 		return
 	}
-	labelKeys, labelValues := sortLabels(labels)
-	familyKey := familyKey(name, labelKeys)
-	seriesKey := joinValues(labelValues)
-
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	f, ok := o.histograms[familyKey]
+	value, ok := selectFloat(records, "value")
 	if !ok {
-		f = &histogramFamily{
-			desc:      prometheus.NewDesc(name, "witness metric:histogram", labelKeys, nil),
-			labelKeys: labelKeys,
-			series:    make(map[string]*histogramSeries),
-		}
-		o.histograms[familyKey] = f
+		return
 	}
-	s, ok := f.series[seriesKey]
-	if !ok {
-		s = &histogramSeries{
-			labelValues: labelValues,
-			quantiles:   make(map[float64]float64),
-		}
-		f.series[seriesKey] = s
-	}
-	s.count += countDelta
-	s.sum += sumDelta
-	for q, v := range quantiles {
-		s.quantiles[q] = v
-	}
+	f.vec.WithLabelValues(selectLabelValues(records, f.labelKeys)...).Observe(value)
 }
 
-func splitCounterRecords(records []witness.Record, delta *float64) (labels map[string]string, deltaFound bool) {
-	labels = make(map[string]string, len(records))
+// selectFloat returns the float value of the first record whose key equals
+// the target. The record value is parsed via strconv.ParseFloat.
+func selectFloat(records []witness.Record, key string) (float64, bool) {
 	for _, r := range records {
-		switch {
-		case r.KeyEqual("value"):
-			if f, err := strconv.ParseFloat(string(r.AppendValue(nil)), 64); err == nil {
-				*delta = f
-				deltaFound = true
+		if !r.KeyEqual(key) {
+			continue
+		}
+		f, err := strconv.ParseFloat(string(r.AppendValue(nil)), 64)
+		if err != nil {
+			return 0, false
+		}
+		return f, true
+	}
+	return 0, false
+}
+
+// selectLabelValues returns the value for each configured label key, in the
+// same order as labelKeys. Keys without a matching record produce an empty
+// string, matching standard Prometheus client behavior.
+func selectLabelValues(records []witness.Record, labelKeys []string) []string {
+	out := make([]string, len(labelKeys))
+	for i, k := range labelKeys {
+		for _, r := range records {
+			if r.KeyEqual(k) {
+				out[i] = string(r.AppendValue(nil))
+				break
 			}
-		case r.KeyEqual("window_ms"):
-			// informational; do not expose as label
-		default:
-			labels[string(r.AppendKey(nil))] = string(r.AppendValue(nil))
 		}
 	}
-	return labels, deltaFound
+	return out
 }
 
-func splitHistogramRecords(records []witness.Record, count *uint64, sum *float64, quantiles map[float64]float64) (labels map[string]string, countFound bool) {
-	labels = make(map[string]string, len(records))
-	for _, r := range records {
-		switch {
-		case r.KeyEqual("count"):
-			if n, err := strconv.ParseUint(string(r.AppendValue(nil)), 10, 64); err == nil {
-				*count = n
-				countFound = true
-			}
-		case r.KeyEqual("sum"):
-			if f, err := strconv.ParseFloat(string(r.AppendValue(nil)), 64); err == nil {
-				*sum = f
-			}
-		case r.KeyEqual("window_ms"):
-			// informational; do not expose as label
-		default:
-			k := string(r.AppendKey(nil))
-			v := string(r.AppendValue(nil))
-			if q, ok := parseQuantileKey(k); ok {
-				if f, err := strconv.ParseFloat(v, 64); err == nil {
-					quantiles[q] = f
-					continue
-				}
-			}
-			labels[k] = v
-		}
-	}
-	return labels, countFound
-}
-
-// parseQuantileKey turns "p50" -> 0.5, "p95" -> 0.95, "p999" -> 0.999.
-// Digits after 'p' are read as a fractional decimal: divisor is 10^len(digits),
-// so trailing-9 conventions like p999/p9999 work.
-func parseQuantileKey(k string) (float64, bool) {
-	if len(k) < 2 || k[0] != 'p' {
-		return 0, false
-	}
-	digits := k[1:]
-	n, err := strconv.ParseUint(digits, 10, 64)
-	if err != nil {
-		return 0, false
-	}
-	div := math.Pow10(len(digits))
-	if div == 0 {
-		return 0, false
-	}
-	return float64(n) / div, true
-}
-
-func sortLabels(labels map[string]string) (keys, values []string) {
-	keys = make([]string, 0, len(labels))
-	for k := range labels {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	values = make([]string, len(keys))
-	for i, k := range keys {
-		values[i] = labels[k]
-	}
-	return keys, values
-}
-
-func familyKey(name string, sortedLabelKeys []string) string {
-	var b strings.Builder
-	b.Grow(len(name) + 1 + len(sortedLabelKeys)*8)
-	b.WriteString(name)
-	b.WriteByte('|')
-	for i, k := range sortedLabelKeys {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		b.WriteString(k)
-	}
-	return b.String()
-}
-
-// joinValues joins sorted label values into a series key. Uses a separator
-// unlikely to appear in label values; collisions are unlikely in practice.
-func joinValues(values []string) string {
-	return strings.Join(values, "\x00")
+func sortedCopy(in []string) []string {
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
 }

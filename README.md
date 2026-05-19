@@ -10,7 +10,7 @@ Features:
 * Push-only data flow
 * Distributed. No internal data dependencies, each observer is independent
 * Custom event types. You can make your own event types, tailored for your application
-* Metrics pre-aggregation is done by the clients
+* Metric events carry a single `value` record — a counter delta or a histogram observation. Clients may emit one event per increment/observation, or batch counter increments into a single event with a larger value
 
 ---
 
@@ -62,14 +62,18 @@ reconnecting the two otherwise-disjoint traces:
 | 019e40bf-41a4-79e6-8224-2d1f67e21073 | 2026-05-19T14:59:02.507Z | span:internal_message:received | message received     | [ 019e40be-e103-70c7-b12f-e249b490194a, 019e4097-86b7-7584-b87d-07347f21f563 ] |
 | 019e40bf-77ec-793c-8705-ca3f4511e23d | 2026-05-19T14:59:18.789Z | span:general:finish            | service finishes     | [ 019e40be-e103-70c7-b12f-e249b490194a ]                                       |
 
-Metrics. The client aggregates over a window and emits one event per window per metric:
+Metrics. Counter and histogram events share the same shape: a single `value` record. For
+counters it is an increment delta passed to `Add(value)`; for histograms it is a single
+observation passed to `Observe(value)`. Clients can emit one event per operation, or batch
+counter increments into a single event with a larger delta:
 
-| event_id                             | event_date               | event_type          | event_message                 | event_span_ids                           | event_records                                                                    |
-|--------------------------------------|--------------------------|---------------------|-------------------------------|------------------------------------------|----------------------------------------------------------------------------------|
-| 019e4094-0991-7d53-b481-ccb7a206350a | 2026-05-19T14:11:55.897Z | span:general:start  | called main function          | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ] |                                                                                  |
-| 019e4096-3c7c-7773-ac5d-1fa06d15dc3b | 2026-05-19T14:14:14.144Z | metric:counter      | http_requests_total           | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ] | { "window_ms": 60000, "value": 12034, "route": "/users", "status": 200 }         |
-| 019e4096-3c7c-7773-ac5d-1fa06d15dc3b | 2026-05-19T14:14:14.144Z | metric:histogram    | http_request_duration_seconds | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ] | { "window_ms": 60000, "count": 12034, "p50": 0.012, "p95": 0.087, "p99": 0.140 } |
-| 019e40a6-ecc4-7ef1-949e-c1754431d89b | 2026-05-19T14:32:28.997Z | span:general:finish | main returned                 | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ] |                                                                                  |
+| event_id                             | event_date               | event_type          | event_message                 | event_span_ids                           | event_records                                        |
+|--------------------------------------|--------------------------|---------------------|-------------------------------|------------------------------------------|------------------------------------------------------|
+| 019e4094-0991-7d53-b481-ccb7a206350a | 2026-05-19T14:11:55.897Z | span:general:start  | called main function          | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ] |                                                      |
+| 019e4096-3c7c-7773-ac5d-1fa06d15dc3b | 2026-05-19T14:14:14.144Z | metric:counter      | http_requests_total           | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ] | { "value": 1, "route": "/users", "status": 200 }     |
+| 019e4096-3c7c-7773-ac5d-1fa06d15dc3b | 2026-05-19T14:14:14.144Z | metric:histogram    | http_request_duration_seconds | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ] | { "value": 0.014, "route": "/users", "status": 200 } |
+| 019e4096-3c7c-7773-ac5d-1fa06d15dc3b | 2026-05-19T14:14:14.244Z | metric:histogram    | http_request_duration_seconds | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ] | { "value": 0.087, "route": "/users", "status": 200 } |
+| 019e40a6-ecc4-7ef1-949e-c1754431d89b | 2026-05-19T14:32:28.997Z | span:general:finish | main returned                 | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ] |                                                      |
 
 ---
 
