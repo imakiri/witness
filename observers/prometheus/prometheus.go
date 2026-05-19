@@ -199,18 +199,16 @@ func (o *Observer) observeHistogram(name string, records []witness.Record) {
 func splitCounterRecords(records []witness.Record, delta *float64) (labels map[string]string, deltaFound bool) {
 	labels = make(map[string]string, len(records))
 	for _, r := range records {
-		k := string(r.AppendKey(nil))
-		v := string(r.AppendValue(nil))
-		switch k {
-		case "value":
-			if f, err := strconv.ParseFloat(v, 64); err == nil {
+		switch {
+		case r.KeyEqual("value"):
+			if f, err := strconv.ParseFloat(string(r.AppendValue(nil)), 64); err == nil {
 				*delta = f
 				deltaFound = true
 			}
-		case "window_ms":
+		case r.KeyEqual("window_ms"):
 			// informational; do not expose as label
 		default:
-			labels[k] = v
+			labels[string(r.AppendKey(nil))] = string(r.AppendValue(nil))
 		}
 	}
 	return labels, deltaFound
@@ -219,21 +217,21 @@ func splitCounterRecords(records []witness.Record, delta *float64) (labels map[s
 func splitHistogramRecords(records []witness.Record, count *uint64, sum *float64, quantiles map[float64]float64) (labels map[string]string, countFound bool) {
 	labels = make(map[string]string, len(records))
 	for _, r := range records {
-		k := string(r.AppendKey(nil))
-		v := string(r.AppendValue(nil))
-		switch k {
-		case "count":
-			if n, err := strconv.ParseUint(v, 10, 64); err == nil {
+		switch {
+		case r.KeyEqual("count"):
+			if n, err := strconv.ParseUint(string(r.AppendValue(nil)), 10, 64); err == nil {
 				*count = n
 				countFound = true
 			}
-		case "sum":
-			if f, err := strconv.ParseFloat(v, 64); err == nil {
+		case r.KeyEqual("sum"):
+			if f, err := strconv.ParseFloat(string(r.AppendValue(nil)), 64); err == nil {
 				*sum = f
 			}
-		case "window_ms":
+		case r.KeyEqual("window_ms"):
 			// informational; do not expose as label
 		default:
+			k := string(r.AppendKey(nil))
+			v := string(r.AppendValue(nil))
 			if q, ok := parseQuantileKey(k); ok {
 				if f, err := strconv.ParseFloat(v, 64); err == nil {
 					quantiles[q] = f

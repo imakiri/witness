@@ -19,6 +19,10 @@ func (r Record) AppendValue(dst []byte) []byte {
 	return append(dst, r.value...)
 }
 
+func (r Record) KeyEqual(target string) bool {
+	return r.key == target
+}
+
 func Key(key string) Record {
 	return Record{
 		key:   key,
@@ -77,6 +81,10 @@ func (r NamedStringer) AppendValue(dst []byte) []byte {
 	return append(dst, r.stringer.String()...)
 }
 
+func (r NamedStringer) KeyEqual(target string) bool {
+	return r.key == target
+}
+
 func Stringer(key string, value fmt.Stringer) NamedStringer {
 	return NamedStringer{
 		key:      key,
@@ -101,6 +109,13 @@ func (r ErrorRecord) AppendValue(dst []byte) []byte {
 		return dst
 	}
 	return append(dst, r.error.Error()...)
+}
+
+func (r ErrorRecord) KeyEqual(target string) bool {
+	if r.error == nil {
+		return false
+	}
+	return r.key == target
 }
 
 func Error(key string, err error) ErrorRecord {
