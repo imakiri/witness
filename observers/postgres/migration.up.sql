@@ -2,14 +2,14 @@ CREATE SCHEMA witness;
 
 CREATE TABLE witness.events
 (
-    event_id     uuid         NOT NULL PRIMARY KEY,
-    event_date   timestamp    NOT NULL DEFAULT NOW(),
-    event_type   int8         NOT NULL,
-    event_name   varchar(127) NOT NULL,
-    event_caller varchar(127) NOT NULL
+    event_id      uuid      NOT NULL PRIMARY KEY,
+    event_date    timestamp NOT NULL DEFAULT NOW(),
+    event_type    int8      NOT NULL,
+    event_message varchar   NOT NULL,
+    event_caller  varchar   NOT NULL
 );
 
-CREATE INDEX events_event_lookup ON witness.events (event_date DESC, event_type, event_name);
+CREATE INDEX events_event_lookup ON witness.events (event_date DESC, event_type, event_message);
 
 CREATE TABLE witness.spans
 (

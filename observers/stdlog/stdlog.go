@@ -13,13 +13,13 @@ import (
 )
 
 type Observer struct {
-	bufPool              *sync.Pool
-	mu                   *sync.Mutex
-	maxEventNameLength   int
-	maxEventValueLength  int
-	maxEventCallerLength int
-	formatter            record.Formatter
-	printCaller          bool
+	bufPool               *sync.Pool
+	mu                    *sync.Mutex
+	maxEventMessageLength int
+	maxEventValueLength   int
+	maxEventCallerLength  int
+	formatter             record.Formatter
+	printCaller           bool
 }
 
 type Option func(o *Observer)
@@ -38,7 +38,7 @@ func NewObserver(options ...Option) *Observer {
 	var o = &Observer{
 		bufPool: bufPool,
 		mu:      new(sync.Mutex),
-		//maxEventNameLength: 8,
+		//maxEventMessageLength: 8,
 		maxEventValueLength: 8,
 		formatter:           record.DefaultFormatter{},
 		printCaller:         true,
@@ -53,15 +53,15 @@ func (o *Observer) appendTime(b []byte, t time.Time) []byte {
 	return t.AppendFormat(b, "2006-01-02T15:04:05.000000000Z07:00")
 }
 
-func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate time.Time, eventType witness.EventType, eventName string, eventCaller string, records ...witness.Record) {
+func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate time.Time, eventType witness.EventType, eventMessage string, eventCaller string, records ...witness.Record) {
 
 	o.mu.Lock()
 	o.maxEventCallerLength = max(o.maxEventCallerLength, utf8.RuneCountInString(eventCaller))
-	o.maxEventNameLength = max(o.maxEventNameLength, utf8.RuneCountInString(eventName))
+	o.maxEventMessageLength = max(o.maxEventMessageLength, utf8.RuneCountInString(eventMessage))
 	//o.maxEventValueLength = max(o.maxEventValueLength, utf8.RuneCountInString(eventValue))
 	var eventCallerSpace = strings.Repeat(" ", o.maxEventCallerLength-utf8.RuneCountInString(eventCaller))
 	var eventTypeSpace = strings.Repeat(" ", witness.MaxEventValueLength()-utf8.RuneCountInString(eventType.String()))
-	var eventNameSpace = strings.Repeat(" ", o.maxEventNameLength-utf8.RuneCountInString(eventName))
+	var eventMessageSpace = strings.Repeat(" ", o.maxEventMessageLength-utf8.RuneCountInString(eventMessage))
 	//var eventValueSpace = strings.Repeat(" ", o.maxEventValueLength-utf8.RuneCountInString(eventValue))
 	o.mu.Unlock()
 
@@ -80,8 +80,8 @@ func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate tim
 	buf = eventType.Append(buf)
 	buf = append(buf, eventTypeSpace...)
 	buf = append(buf, ' ')
-	buf = append(buf, eventName...)
-	buf = append(buf, eventNameSpace...)
+	buf = append(buf, eventMessage...)
+	buf = append(buf, eventMessageSpace...)
 	buf = append(buf, ' ')
 	buf = append(buf, '[')
 	for i, sid := range spanIDs {

@@ -14,13 +14,13 @@ import (
 )
 
 type Event struct {
-	SpanIDs     []uuid.UUID
-	EventID     uuid.UUID
-	EventDate   time.Time
-	EventType   witness.EventType
-	EventName   string
-	EventCaller string
-	Records     []witness.Record
+	SpanIDs      []uuid.UUID
+	EventID      uuid.UUID
+	EventDate    time.Time
+	EventType    witness.EventType
+	EventMessage string
+	EventCaller  string
+	Records      []witness.Record
 }
 
 type Config struct {
@@ -90,8 +90,8 @@ func (o *Observer) worker() {
 			case <-ticker:
 				break collection
 			case event := <-o.observeCh:
-				batch.Queue("INSERT INTO witness.events (event_id, event_date, event_type, event_name, event_caller) VALUES ($1, $2, $3, $4, $5)",
-					event.EventID, event.EventDate, event.EventType, event.EventName, event.EventCaller).Exec(func(ct pgconn.CommandTag) error {
+				batch.Queue("INSERT INTO witness.events (event_id, event_date, event_type, event_message, event_caller) VALUES ($1, $2, $3, $4, $5)",
+					event.EventID, event.EventDate, event.EventType, event.EventMessage, event.EventCaller).Exec(func(ct pgconn.CommandTag) error {
 					if !ct.Insert() || ct.RowsAffected() != 1 {
 						return fmt.Errorf("failed to insert event to the database: %s", ct)
 					}
@@ -125,19 +125,19 @@ func (o *Observer) worker() {
 	}
 }
 
-func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate time.Time, eventType witness.EventType, eventName string, eventCaller string, records ...witness.Record) {
+func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate time.Time, eventType witness.EventType, eventMessage string, eventCaller string, records ...witness.Record) {
 	select {
 	case <-o.done:
 		return
 	default:
 		o.observeCh <- Event{
-			SpanIDs:     spanIDs,
-			EventID:     eventID,
-			EventDate:   eventDate,
-			EventType:   eventType,
-			EventName:   eventName,
-			EventCaller: eventCaller,
-			Records:     records,
+			SpanIDs:      spanIDs,
+			EventID:      eventID,
+			EventDate:    eventDate,
+			EventType:    eventType,
+			EventMessage: eventMessage,
+			EventCaller:  eventCaller,
+			Records:      records,
 		}
 	}
 }

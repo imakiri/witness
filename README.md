@@ -53,14 +53,14 @@ the message itself (`019e4097-86b7-7584-b87d-07347f21f563`). A single
 `WHERE 019e4097-86b7-7584-b87d-07347f21f563 = ANY(event_span_ids)` returns both,
 reconnecting the two otherwise-disjoint traces:
 
-| event_id                             | event_date               | event_type          | event_message        | event_span_ids                                                                 |
-|--------------------------------------|--------------------------|---------------------|----------------------|--------------------------------------------------------------------------------|
-| 019e4094-0991-7d53-b481-ccb7a206350a | 2026-05-19T14:11:55.897Z | span:general:start  | called main function | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ]                                       |
-| 019e4096-3c7c-7773-ac5d-1fa06d15dc3b | 2026-05-19T14:14:14.144Z | link                | message sent         | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e4097-86b7-7584-b87d-07347f21f563 ] |
-| 019e40a6-ecc4-7ef1-949e-c1754431d89b | 2026-05-19T14:32:28.997Z | span:general:finish | main returned        | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ]                                       |
-| 019e40bf-11ad-772a-9ecf-01984ac963bf | 2026-05-19T14:58:51.953Z | span:general:start  | service starts       | [ 019e40be-e103-70c7-b12f-e249b490194a ]                                       |
-| 019e40bf-41a4-79e6-8224-2d1f67e21073 | 2026-05-19T14:59:02.507Z | link                | message received     | [ 019e40be-e103-70c7-b12f-e249b490194a, 019e4097-86b7-7584-b87d-07347f21f563 ] |
-| 019e40bf-77ec-793c-8705-ca3f4511e23d | 2026-05-19T14:59:18.789Z | span:general:finish | service finishes     | [ 019e40be-e103-70c7-b12f-e249b490194a ]                                       |
+| event_id                             | event_date               | event_type                     | event_message        | event_span_ids                                                                 |
+|--------------------------------------|--------------------------|--------------------------------|----------------------|--------------------------------------------------------------------------------|
+| 019e4094-0991-7d53-b481-ccb7a206350a | 2026-05-19T14:11:55.897Z | span:general:start             | called main function | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ]                                       |
+| 019e4096-3c7c-7773-ac5d-1fa06d15dc3b | 2026-05-19T14:14:14.144Z | span:internal_message:sent     | message sent         | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e4097-86b7-7584-b87d-07347f21f563 ] |
+| 019e40a6-ecc4-7ef1-949e-c1754431d89b | 2026-05-19T14:32:28.997Z | span:general:finish            | main returned        | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ]                                       |
+| 019e40bf-11ad-772a-9ecf-01984ac963bf | 2026-05-19T14:58:51.953Z | span:general:start             | service starts       | [ 019e40be-e103-70c7-b12f-e249b490194a ]                                       |
+| 019e40bf-41a4-79e6-8224-2d1f67e21073 | 2026-05-19T14:59:02.507Z | span:internal_message:received | message received     | [ 019e40be-e103-70c7-b12f-e249b490194a, 019e4097-86b7-7584-b87d-07347f21f563 ] |
+| 019e40bf-77ec-793c-8705-ca3f4511e23d | 2026-05-19T14:59:18.789Z | span:general:finish            | service finishes     | [ 019e40be-e103-70c7-b12f-e249b490194a ]                                       |
 
 Metrics. The client aggregates over a window and emits one event per window per metric:
 

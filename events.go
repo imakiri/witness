@@ -53,7 +53,7 @@ func (e EventType) Append(dst []byte) []byte {
 
 var events = []EventType{
 	EventTypeMetric(),
-	//EventTypeGeneric(),
+	//EventTypeLog(),
 	//EventTypeLink(),
 	EventTypeSpanStart(),
 	EventTypeSpanFinish(),
@@ -81,64 +81,136 @@ func Events() []EventType {
 	return es
 }
 
-//	func EventTypeGeneric() EventType {
-//		return EventType{
-//			i: 1,
-//			s: "generic",
-//		}
-//	}
-func EventTypeLink() EventType {
+func EventTypeLog() EventType {
+	return EventType{
+		i: 1,
+		s: "log",
+	}
+}
+
+func EventTypeLogDebug() EventType {
+	return EventType{
+		i: 10,
+		s: "log:debug",
+	}
+}
+func EventTypeLogInfo() EventType {
+	return EventType{
+		i: 11,
+		s: "log:info",
+	}
+}
+func EventTypeLogWarn() EventType {
+	return EventType{
+		i: 12,
+		s: "log:warn",
+	}
+}
+func EventTypeLogError() EventType {
+	return EventType{
+		i: 13,
+		s: "log:error",
+	}
+}
+func EventTypeLogFatal() EventType {
+	return EventType{
+		i: 14,
+		s: "log:fatal",
+	}
+}
+
+// EventTypeLogErrorInternal use when system fails due to internal error
+func EventTypeLogErrorInternal() EventType {
+	return EventType{
+		i: 100,
+		s: "log:error:internal",
+	}
+}
+
+// EventTypeLogErrorExternal use when system fails due to failure of an external system e.g. invalid ingoing request or response
+func EventTypeLogErrorExternal() EventType {
+	return EventType{
+		i: 101,
+		s: "log:error:external",
+	}
+}
+
+// EventTypeLogErrorDevice use when system fails to communicate with internal device
+func EventTypeLogErrorDevice() EventType {
+	return EventType{
+		i: 102,
+		s: "log:error:device",
+	}
+}
+
+// EventTypeLogErrorStorage use when system fails to write or read file on disk or other persistent storage
+func EventTypeLogErrorStorage() EventType {
+	return EventType{
+		i: 103,
+		s: "log:error:storage",
+	}
+}
+
+// EventTypeLogErrorNetwork use when system fails to reach another system via network
+func EventTypeLogErrorNetwork() EventType {
+	return EventType{
+		i: 104,
+		s: "log:error:network",
+	}
+}
+
+func EventTypeSpanLink() EventType {
 	return EventType{
 		i: 2,
-		s: "link",
+		s: "span:link",
 	}
 }
 func EventTypeSpanStart() EventType {
 	return EventType{
-		i: 10,
+		i: 20,
 		s: "span:general:start",
 	}
 }
 func EventTypeSpanFinish() EventType {
 	return EventType{
-		i: -10,
+		i: -20,
 		s: "span:general:finish",
 	}
 }
 func EventTypeSpanInstanceOnline() EventType {
 	return EventType{
-		i: 11,
+		i: 21,
 		s: "span:instance:online",
 	}
 }
 func EventTypeSpanInstanceOffline() EventType {
 	return EventType{
-		i: -11,
+		i: -21,
 		s: "span:instance:offline",
 	}
 }
 
 func EventTypeSpanServiceStart() EventType {
 	return EventType{
-		i: 12,
+		i: 22,
 		s: "span:service:start",
 	}
 }
 func EventTypeSpanServiceFinish() EventType {
 	return EventType{
-		i: -12,
+		i: -22,
 		s: "span:service:finish",
 	}
 }
 func EventTypeSpanWorkerStart() EventType {
 	return EventType{
-		i: 13,
+		i: 23,
 		s: "span:wait_group:start",
 	}
 }
 func EventTypeSpanWorkerFinish() EventType {
 	return EventType{
-		i: -13,
+		i: -23,
 		s: "span:wait_group:finish",
 	}
 }
@@ -146,7 +218,7 @@ func EventTypeSpanWorkerFinish() EventType {
 // EventTypeSpanInternalMessageSent use when sending message to service within your witness system
 func EventTypeSpanInternalMessageSent() EventType {
 	return EventType{
-		i: 14,
+		i: 24,
 		s: "span:internal_message:sent",
 	}
 }
@@ -154,7 +226,7 @@ func EventTypeSpanInternalMessageSent() EventType {
 // EventTypeSpanInternalMessageReceived use when receiving message from service within your witness system
 func EventTypeSpanInternalMessageReceived() EventType {
 	return EventType{
-		i: -14,
+		i: -24,
 		s: "span:internal_message:received",
 	}
 }
@@ -162,7 +234,7 @@ func EventTypeSpanInternalMessageReceived() EventType {
 // EventTypeSpanExternalMessageSent use when sending message to service outside your witness system
 func EventTypeSpanExternalMessageSent() EventType {
 	return EventType{
-		i: 15,
+		i: 25,
 		s: "span:message_external:sent",
 	}
 }
@@ -170,18 +242,24 @@ func EventTypeSpanExternalMessageSent() EventType {
 // EventTypeSpanExternalMessageReceived use when receiving message from service outside your witness system
 func EventTypeSpanExternalMessageReceived() EventType {
 	return EventType{
-		i: -15,
+		i: -25,
 		s: "span:external_message:received",
 	}
 }
 
 func EventTypeMetric() EventType {
 	return EventType{
-		i: 30,
+		i: 3,
 		s: "metric",
 	}
 }
 
+func EventTypeMetricGauge() EventType {
+	return EventType{
+		i: 30,
+		s: "metric:gauge",
+	}
+}
 func EventTypeMetricCounter() EventType {
 	return EventType{
 		i: 31,
@@ -192,66 +270,5 @@ func EventTypeMetricHistogram() EventType {
 	return EventType{
 		i: 32,
 		s: "metric:histogram",
-	}
-}
-
-func EventTypeLogInfo() EventType {
-	return EventType{
-		i: 100,
-		s: "log:info",
-	}
-}
-
-func EventTypeLogWarn() EventType {
-	return EventType{
-		i: 200,
-		s: "log:warn",
-	}
-}
-
-func EventTypeLogDebug() EventType {
-	return EventType{
-		i: 300,
-		s: "log:debug",
-	}
-}
-
-// EventTypeLogError generic error
-func EventTypeLogError() EventType {
-	return EventType{
-		i: 400,
-		s: "log:error",
-	}
-}
-
-// EventTypeLogErrorStorage use when system fails to write or read file on disk or other persistent storage
-func EventTypeLogErrorStorage() EventType {
-	return EventType{
-		i: 401,
-		s: "log:error:storage",
-	}
-}
-
-// EventTypeLogErrorNetwork use when system fails to reach another system via network
-func EventTypeLogErrorNetwork() EventType {
-	return EventType{
-		i: 402,
-		s: "log:error:network",
-	}
-}
-
-// EventTypeLogErrorExternal use when system fails due to failure of an external system e.g. invalid ingoing request or response
-func EventTypeLogErrorExternal() EventType {
-	return EventType{
-		i: 403,
-		s: "log:error:external",
-	}
-}
-
-// EventTypeLogErrorInternal use when system fails due to internal error
-func EventTypeLogErrorInternal() EventType {
-	return EventType{
-		i: 404,
-		s: "log:error:internal",
 	}
 }
