@@ -91,7 +91,7 @@ func (o *Observer) worker() {
 				break collection
 			case event := <-o.observeCh:
 				batch.Queue("INSERT INTO witness.events (event_id, event_date, event_type, event_message, event_caller) VALUES ($1, $2, $3, $4, $5)",
-					event.EventID, event.EventDate, event.EventType, event.EventMessage, event.EventCaller).Exec(func(ct pgconn.CommandTag) error {
+					event.EventID, event.EventDate, event.EventType.Value(), event.EventMessage, event.EventCaller).Exec(func(ct pgconn.CommandTag) error {
 					if !ct.Insert() || ct.RowsAffected() != 1 {
 						return fmt.Errorf("failed to insert event to the database: %s", ct)
 					}
