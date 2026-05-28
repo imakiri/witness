@@ -131,14 +131,27 @@ func (o *Observer) startSpan(event witness.Event) {
 	o.reg.Set(curID, span)
 }
 
-// parentContext nests the new span under its registered parent if any;
-// otherwise it synthesizes a remote SpanContext from the root span_id so
-// every span in the same witness instance shares one trace_id.
+// parentContext nests the new span under its registered parent if any. For
+// cross-service continuation (ParentTraceID set) it pins parent to the
+// upstream SpanContext. Otherwise it synthesizes a remote SpanContext from
+// the root span_id so every span in the same witness instance shares one
+// trace_id.
 func (o *Observer) parentContext(event witness.Event, rootID uuid.UUID) context.Context {
 	ctx := context.Background()
 	if parent, ok := parentSpanID(event); ok {
 		if parentSpan, found := o.reg.Get(parent); found {
 			return trace.ContextWithSpan(ctx, parentSpan)
+		}
+	}
+	if event.ParentTraceID != uuid.Nil {
+		sc := trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    traceIDFromUUID(event.ParentTraceID),
+			SpanID:     spanIDFromUUID(event.ParentSpanID),
+			TraceFlags: trace.FlagsSampled,
+			Remote:     true,
+		})
+		if sc.IsValid() {
+			return trace.ContextWithSpanContext(ctx, sc)
 		}
 	}
 	sc := trace.NewSpanContext(trace.SpanContextConfig{

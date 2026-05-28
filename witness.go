@@ -248,6 +248,40 @@ func ExternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName strin
 	})
 }
 
+// InstanceContinue is Instance for the receiving side of a cross-service
+// boundary: it adopts the upstream root span_id (so the trace_id derived by
+// OTel-aware observers matches the caller) and tags the instance:online event
+// with the upstream parent span_id so the new root span nests under it in
+// trace UIs. parentTraceID is usually the value returned by otlp.Extract.
+func InstanceContinue(ctx context.Context, observer Observer, instanceName, instanceVersion string,
+	parentTraceID, parentSpanID uuid.UUID, records ...Record) (context.Context, Finish) {
+	if observer == nil {
+		observer = NilObserver{}
+	}
+	if parentTraceID == uuid.Nil {
+		return Instance(ctx, observer, instanceName, instanceVersion, records...)
+	}
+	var c = Context{
+		observer: observer,
+		spanIDs:  []uuid.UUID{parentTraceID},
+	}
+	var recordVersion = record{key: "version", value: instanceVersion}
+	observer.Observe(Event{
+		SpanIDs:       c.spanIDs,
+		EventID:       uuid.Must(uuid.NewV7()),
+		EventDate:     time.Now(),
+		EventType:     EventTypeSpanInstanceOnline(),
+		EventMessage:  instanceName,
+		EventCaller:   caller(1, 0),
+		Records:       append(records, recordVersion),
+		ParentTraceID: parentTraceID,
+		ParentSpanID:  parentSpanID,
+	})
+	return With(ctx, c), func(records ...Record) {
+		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInstanceOffline(), instanceName, caller(1, 0), append(records, recordVersion)...)
+	}
+}
+
 // Instance overrides any existing witness context within ctx with a new one
 func Instance(ctx context.Context, observer Observer, instanceName string, instanceVersion string, records ...Record) (context.Context, Finish) {
 	if observer == nil {
