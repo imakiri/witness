@@ -62,6 +62,19 @@ grep -rnE 'func \([^)]+\) Observe\(.*\[\]uuid\.UUID' .
   module still targets Go 1.22, so this only matters if you import
   `observers/otlp`.
 
+## Single-require alternative: `witness/all`
+
+If you'd rather depend on the whole bundle than list each observer
+separately in `go.mod`, replace your individual requires with one:
+
+```
+require github.com/imakiri/witness/all v1.0.0-dev
+```
+
+That transitively pulls every observer/adapter shipped in this repo.
+Code-level imports stay the same — `witness/all` is a dependency
+aggregator, not a re-export.
+
 ## What's new
 
 - `witness.Service`, `witness.Worker` — named sub-spans for long-running

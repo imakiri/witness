@@ -3,6 +3,7 @@ go 1.25.0
 use (
 	.
 	./adapters/log
+	./all
 	./examples
 	./observers/otlp
 	./observers/postgres

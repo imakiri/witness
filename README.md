@@ -4,6 +4,24 @@
 
 Upgrading from v0.x: see [`MIGRATION.md`](./MIGRATION.md).
 
+## Install
+
+Pick whichever fits:
+
+```sh
+# everything — root + all observers + adapters, one require line
+go get github.com/imakiri/witness/all@v1.0.0-dev
+
+# selective — pull only the pieces you need
+go get github.com/imakiri/witness@v1.0.0-dev
+go get github.com/imakiri/witness/observers/stdlog@v1.0.0-dev
+go get github.com/imakiri/witness/observers/otlp@v1.0.0-dev
+```
+
+In code, always import each package from its original path
+(`witness/observers/otlp`, etc.); `witness/all` is just a dependency
+aggregator, it does not re-export.
+
 It's a data model, an observability API and set of its implementations. It combines metrics, logs and traces into one
 data entity called event.
 
