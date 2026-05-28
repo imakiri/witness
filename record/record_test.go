@@ -37,7 +37,9 @@ func TestStruct1(t *testing.T) {
 	var buf []byte
 	for _, record := range records {
 		buf = record.AppendKey(buf)
+		buf = append(buf, ' ')
 		buf = record.AppendValue(buf)
+		buf = append(buf, '\n')
 	}
 
 	const expected = `test.Foo 12

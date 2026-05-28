@@ -46,3 +46,4 @@ func (a *Adapter) Write(p []byte) (n int, err error) {
 	witness.From(a.ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), a.eventType, string(body), string(headerCaller))
 	return len(p), nil
 }
+

@@ -48,9 +48,18 @@ func (c Context) Join(cts ...Context) Context {
 }
 
 func (c Context) Observe(eventID uuid.UUID, eventDate time.Time, eventType EventType, eventName string, eventCaller string, records ...Record) {
-	if c.observer != nil {
-		c.observer.Observe(c.spanIDs, eventID, eventDate, eventType, eventName, eventCaller, records...)
+	if c.observer == nil {
+		return
 	}
+	c.observer.Observe(Event{
+		SpanIDs:      c.spanIDs,
+		EventID:      eventID,
+		EventDate:    eventDate,
+		EventType:    eventType,
+		EventMessage: eventName,
+		EventCaller:  eventCaller,
+		Records:      records,
+	})
 }
 
 func (c Context) Info(msg string, records ...Record) {

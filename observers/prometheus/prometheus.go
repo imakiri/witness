@@ -30,9 +30,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"time"
 
-	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -123,12 +121,12 @@ func (o *Observer) Registry() *prometheus.Registry {
 	return o.registry
 }
 
-func (o *Observer) Observe(_ []uuid.UUID, _ uuid.UUID, _ time.Time, eventType witness.EventType, eventMessage string, _ string, records ...witness.Record) {
-	switch eventType {
+func (o *Observer) Observe(event witness.Event) {
+	switch event.EventType {
 	case witness.EventTypeMetricCounter():
-		o.observeCounter(eventMessage, records)
+		o.observeCounter(event.EventMessage, event.Records)
 	case witness.EventTypeMetricHistogram():
-		o.observeHistogram(eventMessage, records)
+		o.observeHistogram(event.EventMessage, event.Records)
 	}
 }
 

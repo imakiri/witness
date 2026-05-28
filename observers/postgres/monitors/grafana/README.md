@@ -70,9 +70,10 @@ your own panels on top.
 
 ## Known limitations
 
-- **No flame chart.** PostgreSQL data source can't drive Grafana's trace
-  visualization. For that, run a Jaeger HTTP shim on top of the witness DB
-  and point Grafana's Jaeger data source at it. Not built here yet.
+- **No flame chart from PostgreSQL.** PostgreSQL data source can't drive
+  Grafana's trace visualization. For flame charts and OTel-native UIs
+  (Jaeger/Tempo), use the `observers/otlp` observer in tandem with this one:
+  Postgres for ad-hoc SQL exploration, OTLP for the trace UI.
 - **Span parent inference relies on timing.** `span_children` picks the
   most-recently-started co-occurring span as the parent. This is correct
   when start events are emitted strictly before their children's start

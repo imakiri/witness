@@ -2,7 +2,6 @@ package stdlog
 
 import (
 	"encoding/base64"
-	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/record"
 	"os"
@@ -53,45 +52,42 @@ func (o *Observer) appendTime(b []byte, t time.Time) []byte {
 	return t.AppendFormat(b, "2006-01-02T15:04:05.000000000Z07:00")
 }
 
-func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate time.Time, eventType witness.EventType, eventMessage string, eventCaller string, records ...witness.Record) {
-
+func (o *Observer) Observe(event witness.Event) {
 	o.mu.Lock()
-	o.maxEventCallerLength = max(o.maxEventCallerLength, utf8.RuneCountInString(eventCaller))
-	o.maxEventMessageLength = max(o.maxEventMessageLength, utf8.RuneCountInString(eventMessage))
-	//o.maxEventValueLength = max(o.maxEventValueLength, utf8.RuneCountInString(eventValue))
-	var eventCallerSpace = strings.Repeat(" ", o.maxEventCallerLength-utf8.RuneCountInString(eventCaller))
-	var eventTypeSpace = strings.Repeat(" ", witness.MaxEventValueLength()-utf8.RuneCountInString(eventType.String()))
-	var eventMessageSpace = strings.Repeat(" ", o.maxEventMessageLength-utf8.RuneCountInString(eventMessage))
-	//var eventValueSpace = strings.Repeat(" ", o.maxEventValueLength-utf8.RuneCountInString(eventValue))
+	o.maxEventCallerLength = max(o.maxEventCallerLength, utf8.RuneCountInString(event.EventCaller))
+	o.maxEventMessageLength = max(o.maxEventMessageLength, utf8.RuneCountInString(event.EventMessage))
+	var eventCallerSpace = strings.Repeat(" ", o.maxEventCallerLength-utf8.RuneCountInString(event.EventCaller))
+	var eventTypeSpace = strings.Repeat(" ", witness.MaxEventValueLength()-utf8.RuneCountInString(event.EventType.String()))
+	var eventMessageSpace = strings.Repeat(" ", o.maxEventMessageLength-utf8.RuneCountInString(event.EventMessage))
 	o.mu.Unlock()
 
 	var buf = o.bufPool.Get().([]byte)
 	buf = buf[0:0]
 	buf = append(buf, '\n')
-	buf = o.appendTime(buf, eventDate)
+	buf = o.appendTime(buf, event.EventDate)
 	buf = append(buf, ' ')
-	buf = base64.StdEncoding.AppendEncode(buf, eventID.Bytes())
+	buf = base64.StdEncoding.AppendEncode(buf, event.EventID.Bytes())
 	buf = append(buf, ' ')
 	if o.printCaller {
-		buf = append(buf, eventCaller...)
+		buf = append(buf, event.EventCaller...)
 		buf = append(buf, eventCallerSpace...)
 		buf = append(buf, ' ')
 	}
-	buf = eventType.Append(buf)
+	buf = event.EventType.Append(buf)
 	buf = append(buf, eventTypeSpace...)
 	buf = append(buf, ' ')
-	buf = append(buf, eventMessage...)
+	buf = append(buf, event.EventMessage...)
 	buf = append(buf, eventMessageSpace...)
 	buf = append(buf, ' ')
 	buf = append(buf, '[')
-	for i, sid := range spanIDs {
+	for i, sid := range event.SpanIDs {
 		if i != 0 {
 			buf = append(buf, ' ')
 		}
 		buf = base64.StdEncoding.AppendEncode(buf, sid.Bytes())
 	}
 	buf = append(buf, ']')
-	for _, rcd := range records {
+	for _, rcd := range event.Records {
 		buf = append(buf, "\n\t"...)
 		buf = rcd.AppendKey(buf)
 		buf = append(buf, ": \""...)

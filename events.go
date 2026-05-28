@@ -23,9 +23,12 @@ type EventType struct {
 	s string
 }
 
+// MustNewEventType registers a user-defined event type. The range
+// (-1000, +1000) is reserved for built-in types declared in this package;
+// user code must use |i| >= 1000.
 func MustNewEventType(i int64, s string) EventType {
 	if -1000 < i && i < 1000 {
-		panic("i values in range (-1000,+1000) are reserved")
+		panic("i values in range (-1000,+1000) are reserved for built-in event types")
 	}
 	if utf8.RuneCountInString(s) > 127 {
 		panic("s values cannot exceed 128 characters")

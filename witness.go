@@ -123,53 +123,130 @@ func Span(ctx context.Context, spanName string, records ...Record) (context.Cont
 
 func SpanStart(ctx context.Context, spanID uuid.UUID, spanName string, records ...Record) {
 	var c = From(ctx)
-	c.Observer().Observe(append(slices.Clone(c.spanIDs), spanID), uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, caller(1, 0), records...)
+	if c.observer == nil {
+		return
+	}
+	c.observer.Observe(Event{
+		SpanIDs:      append(slices.Clone(c.spanIDs), spanID),
+		EventID:      uuid.Must(uuid.NewV7()),
+		EventDate:    time.Now(),
+		EventType:    EventTypeSpanStart(),
+		EventMessage: spanName,
+		EventCaller:  caller(1, 0),
+		Records:      records,
+	})
 }
 
 func SpanFinish(ctx context.Context, spanID uuid.UUID, spanName string, records ...Record) {
 	var c = From(ctx)
-	c.Observer().Observe(append(slices.Clone(c.spanIDs), spanID), uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, caller(0, 1), records...)
+	if c.observer == nil {
+		return
+	}
+	c.observer.Observe(Event{
+		SpanIDs:      append(slices.Clone(c.spanIDs), spanID),
+		EventID:      uuid.Must(uuid.NewV7()),
+		EventDate:    time.Now(),
+		EventType:    EventTypeSpanFinish(),
+		EventMessage: spanName,
+		EventCaller:  caller(0, 1),
+		Records:      records,
+	})
 }
 
-//func Service(ctx context.Context, serviceName string, records ...Record) (context.Context, Finish) {
-//	var c = From(ctx)
-//	var spanID = uuid.Must(uuid.NewV7())
-//	var spanIDs = []uuid.UUID{c.spanIDs, spanID}
-//	c.Observer().Observe(ctx, spanIDs, EventTypeSpanServiceStart(), serviceName, caller(1, 0), records...)
-//	c.spanIDs = spanID
-//	return c.To(ctx), func(records ...Record) {
-//		spanIDs[0], spanIDs[1] = spanIDs[1], spanIDs[0]
-//		c.Observer().Observe(ctx, spanIDs, EventTypeSpanServiceFinish(), serviceName, caller(0, 1), records...)
-//	}
-//}
-//
-//func InternalMessageSent(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
-//	var c = From(ctx)
-//	c.Observer().Observe(ctx, []uuid.UUID{c.spanIDs, msgID}, EventTypeSpanInternalMessageSent(), msgName, caller(1, 0), records...)
-//}
-//
-//func InternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
-//	var c = From(ctx)
-//	c.Observer().Observe(ctx, []uuid.UUID{msgID, c.spanIDs}, EventTypeSpanInternalMessageReceived(), msgName, caller(1, 0), records...)
-//}
-//
-//func ExternalMessage(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) Finish {
-//	var c = From(ctx)
-//	c.Observer().Observe(ctx, []uuid.UUID{c.spanIDs, msgID}, EventTypeSpanExternalMessageSent(), msgName, caller(1, 0), records...)
-//	return func(records ...Record) {
-//		c.Observer().Observe(ctx, []uuid.UUID{msgID, c.spanIDs}, EventTypeSpanExternalMessageReceived(), msgName, caller(1, 1), records...)
-//	}
-//}
-//
-//func ExternalMessageSent(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
-//	var c = From(ctx)
-//	c.Observer().Observe(ctx, []uuid.UUID{c.spanIDs, msgID}, EventTypeSpanExternalMessageSent(), msgName, caller(1, 0), records...)
-//}
-//
-//func ExternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
-//	var c = From(ctx)
-//	c.Observer().Observe(ctx, []uuid.UUID{msgID, c.spanIDs}, EventTypeSpanExternalMessageReceived(), msgName, caller(1, 0), records...)
-//}
+// Service is Span with span:service:start/finish event types.
+func Service(ctx context.Context, serviceName string, records ...Record) (context.Context, Finish) {
+	var c = From(ctx)
+	var nc = Context{
+		observer: c.observer,
+		spanIDs:  append(slices.Clone(c.spanIDs), uuid.Must(uuid.NewV7())),
+	}
+	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanServiceStart(), serviceName, caller(1, 0), records...)
+	return nc.To(ctx), func(records ...Record) {
+		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanServiceFinish(), serviceName, caller(0, 1), records...)
+	}
+}
+
+// Worker is Span with span:wait_group:start/finish event types.
+func Worker(ctx context.Context, workerName string, records ...Record) (context.Context, Finish) {
+	var c = From(ctx)
+	var nc = Context{
+		observer: c.observer,
+		spanIDs:  append(slices.Clone(c.spanIDs), uuid.Must(uuid.NewV7())),
+	}
+	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanWorkerStart(), workerName, caller(1, 0), records...)
+	return nc.To(ctx), func(records ...Record) {
+		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanWorkerFinish(), workerName, caller(0, 1), records...)
+	}
+}
+
+// InternalMessageSent emits a span:internal_message:sent event carrying msgID
+// in span_ids. Pair it with InternalMessageReceived on the recipient side; a
+// query for the shared msgID reconnects both sides of the hand-off.
+func InternalMessageSent(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
+	var c = From(ctx)
+	if c.observer == nil {
+		return
+	}
+	c.observer.Observe(Event{
+		SpanIDs:      append(slices.Clone(c.spanIDs), msgID),
+		EventID:      uuid.Must(uuid.NewV7()),
+		EventDate:    time.Now(),
+		EventType:    EventTypeSpanInternalMessageSent(),
+		EventMessage: msgName,
+		EventCaller:  caller(1, 0),
+		Records:      records,
+	})
+}
+
+func InternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
+	var c = From(ctx)
+	if c.observer == nil {
+		return
+	}
+	c.observer.Observe(Event{
+		SpanIDs:      append(slices.Clone(c.spanIDs), msgID),
+		EventID:      uuid.Must(uuid.NewV7()),
+		EventDate:    time.Now(),
+		EventType:    EventTypeSpanInternalMessageReceived(),
+		EventMessage: msgName,
+		EventCaller:  caller(1, 0),
+		Records:      records,
+	})
+}
+
+// ExternalMessageSent is InternalMessageSent across a witness-system boundary
+// (outbound HTTP, third-party RPC, etc).
+func ExternalMessageSent(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
+	var c = From(ctx)
+	if c.observer == nil {
+		return
+	}
+	c.observer.Observe(Event{
+		SpanIDs:      append(slices.Clone(c.spanIDs), msgID),
+		EventID:      uuid.Must(uuid.NewV7()),
+		EventDate:    time.Now(),
+		EventType:    EventTypeSpanExternalMessageSent(),
+		EventMessage: msgName,
+		EventCaller:  caller(1, 0),
+		Records:      records,
+	})
+}
+
+func ExternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
+	var c = From(ctx)
+	if c.observer == nil {
+		return
+	}
+	c.observer.Observe(Event{
+		SpanIDs:      append(slices.Clone(c.spanIDs), msgID),
+		EventID:      uuid.Must(uuid.NewV7()),
+		EventDate:    time.Now(),
+		EventType:    EventTypeSpanExternalMessageReceived(),
+		EventMessage: msgName,
+		EventCaller:  caller(1, 0),
+		Records:      records,
+	})
+}
 
 // Instance overrides any existing witness context within ctx with a new one
 func Instance(ctx context.Context, observer Observer, instanceName string, instanceVersion string, records ...Record) (context.Context, Finish) {
@@ -190,16 +267,3 @@ func Instance(ctx context.Context, observer Observer, instanceName string, insta
 	}
 }
 
-//
-//func Worker(ctx context.Context, workerName string, records ...Record) (context.Context, Finish) {
-//	var c = From(ctx)
-//	c = c.Join(Context{
-//		observer: c.observer,
-//		spanIDs:  []uuid.UUID{uuid.Must(uuid.NewV7())},
-//	})
-//
-//	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanWorkerStart(), workerName, caller(1, 0), records...)
-//	return With(ctx, c), func(records ...Record) {
-//		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanWorkerFinish(), workerName, caller(1, 0), records...)
-//	}
-//}
