@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/gofrs/uuid/v5 v5.3.0
-	github.com/imakiri/witness v0.20.0
+	github.com/imakiri/witness v1.0.0-dev
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.44.0
