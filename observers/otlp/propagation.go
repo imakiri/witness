@@ -1,53 +1,55 @@
 package otlp
 
-// W3C traceparent inject/extract. Call Inject before sending an outbound
-// request, Extract on the receiving side before *MessageReceived.
+// W3C traceparent inject/extract.
+//
+// Deprecated: this file is a thin compatibility shim over
+// github.com/imakiri/witness/propagation. New code should depend on the
+// witness/propagation package directly and pass an http.Header.
 
 import (
-	"encoding/hex"
-	"fmt"
-	"strings"
+	"net/http"
 
 	"github.com/gofrs/uuid/v5"
+	"github.com/imakiri/witness/propagation"
 )
 
-const TraceparentHeader = "traceparent"
+// TraceparentHeader is the W3C header name.
+//
+// Deprecated: use propagation.TraceparentHeader.
+const TraceparentHeader = propagation.TraceparentHeader
 
-// Carrier matches http.Header.Get/Set without dragging in net/http.
+// Carrier matches http.Header.Get/Set without dragging in net/http. http.Header
+// already satisfies it.
+//
+// Deprecated: use http.Header directly with the propagation package.
 type Carrier interface {
 	Get(key string) string
 	Set(key, value string)
 }
 
+// Inject writes a W3C traceparent header.
+//
+// Deprecated: use propagation.Inject with an http.Header.
 func Inject(carrier Carrier, rootSpanID, msgSpanID uuid.UUID) {
-	traceID := traceIDFromUUID(rootSpanID)
-	spanID := spanIDFromUUID(msgSpanID)
-	carrier.Set(TraceparentHeader, fmt.Sprintf("00-%s-%s-01",
-		hex.EncodeToString(traceID[:]),
-		hex.EncodeToString(spanID[:]),
-	))
+	if h, ok := carrier.(http.Header); ok {
+		propagation.Inject(h, rootSpanID, msgSpanID)
+		return
+	}
+	h := http.Header{}
+	propagation.Inject(h, rootSpanID, msgSpanID)
+	carrier.Set(TraceparentHeader, h.Get(TraceparentHeader))
 }
 
-// Extract returns trace_id (16 bytes) and the span_id padded into the low 8
-// bytes of a uuid.UUID. Treat msgSpanID as opaque, not a real UUID v7.
+// Extract reads a W3C traceparent header.
+//
+// Deprecated: use propagation.Extract with an http.Header.
 func Extract(carrier Carrier) (traceID uuid.UUID, msgSpanID uuid.UUID, ok bool) {
-	header := carrier.Get(TraceparentHeader)
-	if header == "" {
-		return uuid.Nil, uuid.Nil, false
+	if h, ok := carrier.(http.Header); ok {
+		return propagation.Extract(h)
 	}
-	parts := strings.Split(header, "-")
-	if len(parts) != 4 {
-		return uuid.Nil, uuid.Nil, false
+	h := http.Header{}
+	if v := carrier.Get(TraceparentHeader); v != "" {
+		h.Set(TraceparentHeader, v)
 	}
-	traceBytes, err := hex.DecodeString(parts[1])
-	if err != nil || len(traceBytes) != 16 {
-		return uuid.Nil, uuid.Nil, false
-	}
-	spanBytes, err := hex.DecodeString(parts[2])
-	if err != nil || len(spanBytes) != 8 {
-		return uuid.Nil, uuid.Nil, false
-	}
-	copy(traceID[:], traceBytes)
-	copy(msgSpanID[8:], spanBytes)
-	return traceID, msgSpanID, true
+	return propagation.Extract(h)
 }

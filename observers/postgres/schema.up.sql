@@ -1,8 +1,9 @@
--- Witness Postgres schema — consolidated v1+v2+v3.
+-- Witness Postgres schema — consolidated v1+v2+v3+v4.
 --
 -- Apply this on fresh deployments instead of stacking migration.up.sql,
--- migration_v2.up.sql, migration_v3.up.sql in order. Existing installations
--- should keep applying the incremental migration_v*.up.sql files.
+-- migration_v2.up.sql, migration_v3.up.sql and migration_v4.up.sql in
+-- order. Existing installations should keep applying the incremental
+-- migration_v*.up.sql files.
 --
 -- After this file, apply observers/postgres/monitors/grafana/views.up.sql to
 -- materialize the Grafana views.
@@ -25,7 +26,13 @@ CREATE TABLE witness.events
     -- an externally-provided trace context (typically from a W3C
     -- traceparent header). Non-null only on InstanceContinue's online event.
     parent_trace_id uuid      NULL,
-    parent_span_id  uuid      NULL
+    parent_span_id  uuid      NULL,
+    -- service_name is the local instance's name (the string passed to
+    -- witness.Instance / witness.InstanceContinue). Every event emitted by
+    -- one instance shares the same service_name; cross-service hops reset
+    -- it on the receiver. NULL when an event was emitted from a Context
+    -- that never went through an Instance constructor.
+    service_name    varchar(127) NULL
 );
 
 CREATE INDEX events_event_lookup
@@ -48,6 +55,11 @@ CREATE INDEX events_message_trgm
 CREATE INDEX events_trace_id_idx
     ON witness.events (trace_id, event_date DESC)
     WHERE trace_id IS NOT NULL;
+
+-- Per-service lookup, optionally narrowed by trace_id via events_trace_id_idx.
+CREATE INDEX events_service_lookup
+    ON witness.events (service_name, event_date DESC)
+    WHERE service_name IS NOT NULL;
 
 CREATE TABLE witness.spans
 (

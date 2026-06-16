@@ -255,6 +255,88 @@ func TestObserverObserveAfterCloseDoesNotPanic(t *testing.T) {
 	}
 }
 
+// TestObserverPropagatesServiceName — events emitted through a witness.Context
+// that went through witness.Instance must land in DB with the right
+// service_name column populated end-to-end. Integration test, env-gated.
+func TestObserverPropagatesServiceName(t *testing.T) {
+	dsn := os.Getenv("WITNESS_TEST_DSN")
+	if dsn == "" {
+		t.Skip("WITNESS_TEST_DSN not set; skipping integration test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	defer admin.Close()
+
+	if _, err := admin.Exec(ctx, "DROP SCHEMA IF EXISTS witness CASCADE"); err != nil {
+		t.Fatalf("drop schema: %v", err)
+	}
+	if _, err := admin.Exec(ctx, schemaSQL); err != nil {
+		t.Fatalf("apply schema: %v", err)
+	}
+
+	poolCfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatalf("ParseConfig: %v", err)
+	}
+	poolCfg.MaxConns = 2
+
+	obs, err := NewObserver(Config{
+		CollectionDuration: time.Hour,
+		CollectionMaxSize:  64,
+		BatchTimeout:       5 * time.Second,
+		ShutdownTimeout:    5 * time.Second,
+		Database:           poolCfg,
+	})
+	if err != nil {
+		t.Fatalf("NewObserver: %v", err)
+	}
+
+	// Build a real witness Context the way an application would.
+	rootCtx, finishInstance := witness.Instance(context.Background(), obs, "test-service", "v0.0.0")
+	childCtx, finishSpan := witness.Span(rootCtx, "do-work")
+	witness.From(childCtx).Info("hello from child span")
+	finishSpan()
+	finishInstance()
+
+	obs.Close()
+
+	type row struct {
+		service string
+		count   int
+	}
+	rows, err := admin.Query(ctx, `
+		SELECT COALESCE(service_name, '<null>') AS service, count(*)::int
+		FROM witness.events
+		GROUP BY service
+		ORDER BY service`)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+
+	var got []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.service, &r.count); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		got = append(got, r)
+	}
+	if len(got) != 1 || got[0].service != "test-service" {
+		t.Fatalf("expected all events under 'test-service', got %+v", got)
+	}
+	// Instance+Span pair = 4 lifecycle events + 1 Info = 5.
+	if got[0].count != 5 {
+		t.Errorf("expected 5 events, got %d", got[0].count)
+	}
+}
+
 // TestObserverDrainsOnClose — events buffered when Close is called must reach
 // the database within ShutdownTimeout. Integration test, env-gated.
 func TestObserverDrainsOnClose(t *testing.T) {

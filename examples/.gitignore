@@ -1,0 +1,6 @@
+bin/
+*.bin
+
+# go build output без расширения (root-named binary)
+/examples
+/distributed/examples

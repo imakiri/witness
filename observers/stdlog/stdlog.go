@@ -2,6 +2,7 @@ package stdlog
 
 import (
 	"encoding/base64"
+	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/record"
 	"os"
@@ -65,6 +66,14 @@ func (o *Observer) Observe(event witness.Event) {
 	buf = buf[0:0]
 	buf = append(buf, '\n')
 	buf = o.appendTime(buf, event.EventDate)
+	buf = append(buf, ' ')
+	// trace_id is fixed-width (22 chars base64) or 22 spaces when absent —
+	// keeps columns aligned so grep / awk pipelines stay simple.
+	if event.TraceID != uuid.Nil {
+		buf = base64.StdEncoding.AppendEncode(buf, event.TraceID.Bytes())
+	} else {
+		buf = append(buf, strings.Repeat(" ", 22)...)
+	}
 	buf = append(buf, ' ')
 	buf = base64.StdEncoding.AppendEncode(buf, event.EventID.Bytes())
 	buf = append(buf, ' ')

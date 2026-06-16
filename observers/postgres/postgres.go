@@ -236,6 +236,13 @@ func nullUUID(u uuid.UUID) any {
 	return u
 }
 
+func nullString(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 func queueEvent(batch *pgx.Batch, event witness.Event) {
 	// Normalize to UTC. The events schema stores event_date as `timestamp
 	// without time zone`; mixing wall-clock zones makes Grafana's UTC-based
@@ -243,10 +250,11 @@ func queueEvent(batch *pgx.Batch, event witness.Event) {
 	// everything out.
 	batch.Queue(`INSERT INTO witness.events
 			(event_id, event_date, event_type, event_message, event_caller,
-			 trace_id, parent_trace_id, parent_span_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			 trace_id, parent_trace_id, parent_span_id, service_name)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 		event.EventID, event.EventDate.UTC(), event.EventType.Value(), event.EventMessage, event.EventCaller,
 		nullUUID(event.TraceID), nullUUID(event.ParentTraceID), nullUUID(event.ParentSpanID),
+		nullString(event.ServiceName),
 	).Exec(func(ct pgconn.CommandTag) error {
 		if !ct.Insert() || ct.RowsAffected() != 1 {
 			return fmt.Errorf("failed to insert event to the database: %s", ct)

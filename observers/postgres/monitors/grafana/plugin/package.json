@@ -1,0 +1,44 @@
+{
+  "name": "imakiri-witness-datasource",
+  "version": "0.1.0",
+  "description": "Grafana data source plugin for the Witness observability schema in Postgres.",
+  "private": true,
+  "scripts": {
+    "build": "webpack -c ./.config/webpack/webpack.config.ts --env production",
+    "dev": "webpack -w -c ./.config/webpack/webpack.config.ts --env development",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint --ext .js,.jsx,.ts,.tsx ./src",
+    "server": "docker compose up --build",
+    "sign": "npx --yes @grafana/sign-plugin@latest"
+  },
+  "author": "imakiri",
+  "license": "MIT",
+  "devDependencies": {
+    "@grafana/eslint-config": "^7.0.0",
+    "@grafana/tsconfig": "^2.0.0",
+    "@types/lodash": "^4.17.0",
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/testing-library__jest-dom": "^5.14.0",
+    "typescript": "^5.4.0",
+    "webpack": "^5.91.0",
+    "webpack-cli": "^5.1.0",
+    "ts-loader": "^9.5.0",
+    "tsconfig-paths-webpack-plugin": "^4.1.0"
+  },
+  "dependencies": {
+    "@emotion/css": "^11.11.0",
+    "@grafana/data": "^10.4.0",
+    "@grafana/runtime": "^10.4.0",
+    "@grafana/schema": "^10.4.0",
+    "@grafana/ui": "^10.4.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "rxjs": "7.8.1",
+    "tslib": "2.6.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
