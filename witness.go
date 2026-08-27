@@ -65,7 +65,7 @@ func Error(ctx context.Context, msg string, err error, records ...Record) {
 	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
 }
 
-func ErrorF(ctx context.Context, msg string, err error, records ...Record) error {
+func ErrorRF(ctx context.Context, msg string, err error, records ...Record) error {
 	var c = From(ctx)
 	if c.t != nil {
 		c.t.Helper()
