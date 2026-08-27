@@ -23,5 +23,5 @@ replace github.com/imakiri/witness/observers/stdlog v0.22.0 => ./observers/stdlo
 replace github.com/imakiri/witness/observers/tee v0.5.0 => ./observers/tee
 replace github.com/imakiri/witness/observers/test v0.3.0 => ./observers/test
 replace github.com/imakiri/witness/record v0.19.0 => ./record
-replace github.com/imakiri/witness v0.28.0 => .
+replace github.com/imakiri/witness v0.29.0 => .
 // --- end release.sh ---

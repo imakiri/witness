@@ -4,7 +4,7 @@ go 1.25
 
 require (
 	github.com/gofrs/uuid/v5 v5.5.1
-	github.com/imakiri/witness v0.28.0
+	github.com/imakiri/witness v0.29.0
 	github.com/stretchr/testify v1.10.0
 )
 
