@@ -5,10 +5,12 @@ import (
 	"context"
 	"github.com/gofrs/uuid/v5"
 	"slices"
+	"testing"
 	"time"
 )
 
 type Context struct {
+	t        *testing.T
 	observer Observer
 	spanIDs  []uuid.UUID
 }
@@ -32,6 +34,12 @@ func NewContext(observer Observer) Context {
 	}
 }
 
+func NewTestContext(t *testing.T, observer Observer) Context {
+	var c = NewContext(observer)
+	c.t = t
+	return c
+}
+
 func (c Context) Join(cts ...Context) Context {
 	var spanIDs = make([]uuid.UUID, len(c.spanIDs), len(c.spanIDs)+len(cts))
 	copy(spanIDs, c.spanIDs)
@@ -48,24 +56,39 @@ func (c Context) Join(cts ...Context) Context {
 }
 
 func (c Context) Observe(eventID uuid.UUID, eventDate time.Time, eventType EventType, eventName string, eventCaller string, records ...Record) {
+	if c.t != nil {
+		c.t.Helper()
+	}
 	if c.observer != nil {
 		c.observer.Observe(c.spanIDs, eventID, eventDate, eventType, eventName, eventCaller, records...)
 	}
 }
 
 func (c Context) Info(msg string, records ...Record) {
+	if c.t != nil {
+		c.t.Helper()
+	}
 	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), msg, caller(1, 0), records...)
 }
 
 func (c Context) Warn(msg string, records ...Record) {
+	if c.t != nil {
+		c.t.Helper()
+	}
 	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogWarn(), msg, caller(1, 0), records...)
 }
 
 func (c Context) Debug(msg string, records ...Record) {
+	if c.t != nil {
+		c.t.Helper()
+	}
 	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogDebug(), msg, caller(1, 0), records...)
 }
 
 func (c Context) Error(msg string, err error, records ...Record) {
+	if c.t != nil {
+		c.t.Helper()
+	}
 	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
 }
 

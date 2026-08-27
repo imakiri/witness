@@ -2,25 +2,29 @@ package witness
 
 import "unicode/utf8"
 
-var maxEventValueLength int
-
-func MaxEventValueLength() int {
-	return maxEventValueLength
-}
-
-func calcMaxEventValueLength() {
+func CalcMaxEventValueLength(events []EventType) int {
+	var length int
 	for _, event := range events {
-		maxEventValueLength = max(maxEventValueLength, utf8.RuneCountInString(event.s))
+		length = max(length, utf8.RuneCountInString(event.s))
 	}
-}
-
-func init() {
-	calcMaxEventValueLength()
+	return length
 }
 
 type EventType struct {
+	e bool
 	i int64
 	s string
+}
+
+func EventTypesCompare(a, b EventType) int {
+	switch {
+	case a.Value() > b.Value():
+		return 1
+	case a.Value() < b.Value():
+		return -1
+	default:
+		return 0
+	}
 }
 
 func MustNewEventType(i int64, s string) EventType {
@@ -35,7 +39,6 @@ func MustNewEventType(i int64, s string) EventType {
 		s: s,
 	}
 	events = append(events, eventType)
-	calcMaxEventValueLength()
 	return eventType
 }
 
@@ -49,6 +52,10 @@ func (e EventType) String() string {
 
 func (e EventType) Append(dst []byte) []byte {
 	return append(dst, e.s...)
+}
+
+func (e EventType) IsError() bool {
+	return e.e
 }
 
 var events = []EventType{
@@ -108,12 +115,14 @@ func EventTypeLogWarn() EventType {
 }
 func EventTypeLogError() EventType {
 	return EventType{
+		e: true,
 		i: 13,
 		s: "log:error",
 	}
 }
 func EventTypeLogFatal() EventType {
 	return EventType{
+		e: true,
 		i: 14,
 		s: "log:fatal",
 	}
@@ -122,6 +131,7 @@ func EventTypeLogFatal() EventType {
 // EventTypeLogErrorInternal use when system fails due to internal error
 func EventTypeLogErrorInternal() EventType {
 	return EventType{
+		e: true,
 		i: 100,
 		s: "log:error:internal",
 	}
@@ -130,6 +140,7 @@ func EventTypeLogErrorInternal() EventType {
 // EventTypeLogErrorExternal use when system fails due to failure of an external system e.g. invalid ingoing request or response
 func EventTypeLogErrorExternal() EventType {
 	return EventType{
+		e: true,
 		i: 101,
 		s: "log:error:external",
 	}
@@ -138,6 +149,7 @@ func EventTypeLogErrorExternal() EventType {
 // EventTypeLogErrorDevice use when system fails to communicate with internal device
 func EventTypeLogErrorDevice() EventType {
 	return EventType{
+		e: true,
 		i: 102,
 		s: "log:error:device",
 	}
@@ -146,6 +158,7 @@ func EventTypeLogErrorDevice() EventType {
 // EventTypeLogErrorStorage use when system fails to write or read file on disk or other persistent storage
 func EventTypeLogErrorStorage() EventType {
 	return EventType{
+		e: true,
 		i: 103,
 		s: "log:error:storage",
 	}
@@ -154,6 +167,7 @@ func EventTypeLogErrorStorage() EventType {
 // EventTypeLogErrorNetwork use when system fails to reach another system via network
 func EventTypeLogErrorNetwork() EventType {
 	return EventType{
+		e: true,
 		i: 104,
 		s: "log:error:network",
 	}
