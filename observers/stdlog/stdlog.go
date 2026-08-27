@@ -1,7 +1,6 @@
 package stdlog
 
 import (
-	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/record"
 	"os"
@@ -58,12 +57,12 @@ func (o *Observer) appendTime(b []byte, t time.Time) []byte {
 	return t.AppendFormat(b, "2006-01-02T15:04:05.000000000Z07:00")
 }
 
-func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate time.Time, eventType witness.EventType, eventMessage string, eventCaller string, records ...witness.Record) {
-	if _, found := slices.BinarySearchFunc(o.types, eventType, witness.EventTypesCompare); !found {
+func (o *Observer) Observe(event witness.Event) {
+	if _, found := slices.BinarySearchFunc(o.types, event.EventType, witness.EventTypesCompare); !found {
 		return
 	}
-	if eventType.IsError() && o.useStdErr {
-		o.printer.Print(os.Stderr, spanIDs, eventID, eventDate, eventType, eventMessage, eventCaller, records...)
+	if event.EventType.IsError() && o.useStdErr {
+		o.printer.Print(os.Stderr, event)
 	}
-	o.printer.Print(os.Stdout, spanIDs, eventID, eventDate, eventType, eventMessage, eventCaller, records...)
+	o.printer.Print(os.Stdout, event)
 }

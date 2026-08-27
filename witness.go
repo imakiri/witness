@@ -206,18 +206,14 @@ func Trace(ctx context.Context, spanName string, records ...Record) (context.Con
 }
 
 func Span(ctx context.Context, spanName string, records ...Record) (context.Context, Finish) {
-	var c = From(ctx).withChildSpan(uuid.Must(uuid.NewV7()))
-	if c.t != nil {
-		c.t.Helper()
-	}
-	var nc = Context{
-		observer: c.observer,
-		spanIDs:  append(slices.Clone(c.spanIDs), uuid.Must(uuid.NewV7())),
+	var nc = From(ctx).withChildSpan(uuid.Must(uuid.NewV7()))
+	if nc.t != nil {
+		nc.t.Helper()
 	}
 	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, caller(1, 0), records...)
 	return nc.To(ctx), func(records ...Record) {
 		if nc.t != nil {
-			c.t.Helper()
+			nc.t.Helper()
 		}
 		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, caller(0, 1), records...)
 	}
@@ -228,15 +224,15 @@ func SpanStart(ctx context.Context, spanID uuid.UUID, spanName string, records .
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observer().Observe(append(slices.Clone(c.spanIDs), spanID), uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, caller(1, 0), records...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, caller(1, 0), records...)
 }
 
 func SpanFinish(ctx context.Context, spanID uuid.UUID, spanName string, records ...Record) {
-	var c = From(ctx)
+	var c = From(ctx).withChildSpan(spanID)
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.withChildSpan(spanID).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, caller(0, 1), records...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, caller(0, 1), records...)
 }
 
 // Service is Span with span:service:start/finish event types.
@@ -247,6 +243,9 @@ func Service(ctx context.Context, serviceName string, records ...Record) (contex
 	}
 	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanServiceStart(), serviceName, caller(1, 0), records...)
 	return nc.To(ctx), func(records ...Record) {
+		if nc.t != nil {
+			nc.t.Helper()
+		}
 		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanServiceFinish(), serviceName, caller(0, 1), records...)
 	}
 }
@@ -259,6 +258,9 @@ func Worker(ctx context.Context, workerName string, records ...Record) (context.
 	}
 	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanWorkerStart(), workerName, caller(1, 0), records...)
 	return nc.To(ctx), func(records ...Record) {
+		if nc.t != nil {
+			nc.t.Helper()
+		}
 		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanWorkerFinish(), workerName, caller(0, 1), records...)
 	}
 }
@@ -348,4 +350,3 @@ func Instance(ctx context.Context, observer Observer, instanceName string, insta
 		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInstanceOffline(), instanceName, caller(1, 0), append(records, recordVersion)...)
 	}
 }
-
