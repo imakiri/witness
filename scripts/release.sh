@@ -83,6 +83,14 @@ sync_gowork() {
   echo "go.work: $(printf '%s\n' "${lines[@]}" | sort -u | wc -l) replace(s)"
 }
 
+# A tag only counts as released once it is on the remote: a local tag from a
+# push that failed (auth, network) must not be treated as done.
+REMOTE_TAGS=
+pushed() {
+  [ -n "$REMOTE_TAGS" ] || REMOTE_TAGS=$(git ls-remote --tags origin | sed 's|.*refs/tags/||' | grep -v '\^{}$')
+  printf '%s\n' "$REMOTE_TAGS" | grep -qx "$1"
+}
+
 prepare() {
   # no args: bump the minor of whatever module you are standing in
   if [ $# -eq 0 ]; then
@@ -95,12 +103,27 @@ prepare() {
 
   for d in "${!MODDIRS[@]}"; do t=$(latest "$d"); VER[$d]=${t#"$(tagpfx "$d")"}; done
 
+  # carry over entries from a previous prepare that have not been tagged yet,
+  # so marking modules across several runs accumulates instead of clobbering
+  local pend
+  if [ -f .release ]; then
+    while read -r pend; do
+      [ -n "$pend" ] || continue
+      pushed "$pend" && continue                          # already released
+      case "$pend" in */v*) d=${pend%/v*}; v=v${pend##*/v};; v*) d=.; v=$pend;; esac
+      [ -n "${MODDIRS[$d]:-}" ] || continue
+      VER[$d]=$v; tags+=("$pend")
+    done < .release
+  fi
+
   for arg in "$@"; do
     d=${arg%:*}; kind=${arg##*:}
     d=${d#./}; d=${d%/}; [ -z "$d" ] && d=.
     [ -n "${MODDIRS[$d]:-}" ] || { echo "no module at $d" >&2; exit 1; }
     # ponytail: first release of a module starts at v0.1.0 regardless of kind.
-    VER[$d]=$([ -n "${VER[$d]}" ] && bump "${VER[$d]}" "$kind" || echo v0.1.0)
+    t=$(latest "$d"); t=${t#"$(tagpfx "$d")"}
+    VER[$d]=$([ -n "$t" ] && bump "$t" "$kind" || echo v0.1.0)
+    tags=($(printf '%s\n' "${tags[@]:-}" | grep -v "^$(tagpfx "$d")v" || true))
     tags+=("$(tagpfx "$d")${VER[$d]}")
     RELVER[$d]=${VER[$d]}
   done
@@ -142,10 +165,13 @@ tag() {
 
   local t new=()
   while read -r t; do
-    if git rev-parse -q --verify "refs/tags/$t" >/dev/null; then
-      echo "already tagged: $t" >&2
+    if pushed "$t"; then
+      echo "already released: $t" >&2
     else
-      git tag "$t" "$sha"; new+=("$t")
+      # a local tag left over from a failed push is re-pointed at the merge commit
+      git rev-parse -q --verify "refs/tags/$t" >/dev/null && git tag -f "$t" "$sha" >/dev/null ||
+        git tag "$t" "$sha"
+      new+=("$t")
     fi
   done < .release
 
