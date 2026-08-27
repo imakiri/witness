@@ -3,7 +3,10 @@ go 1.26.5
 use (
 	.
 	./adapters/log
+	./all
 	./examples
+	./examples/distributed
+	./observers/otlp
 	./observers/postgres
 	./observers/prometheus
 	./observers/stdlog

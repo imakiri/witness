@@ -1,97 +1,86 @@
 # Witness — Grafana monitor
 
-SQL views + a Grafana dashboard for exploring witness spans and logs that
-land in the Postgres observer.
+A drop-in Grafana setup for exploring `witness.*` Postgres data: per-event
+logs view (Loki-style), per-request trace graph, log volume histogram,
+cross-service edges, and aggregate stats. Uses the stock PostgreSQL
+datasource — no custom plugin required to consume the data this way (a
+custom plugin lives under `plugin/` for richer integration, but is not
+needed for the dashboard).
 
-This is a **dashboard-based** view of trace data, not a flame chart. Grafana's
-native trace UI is wired to Tempo/Jaeger/Zipkin, not PostgreSQL. What you get
-here is: pick a span_id, see all events that happened inside it, jump to its
-direct children, navigate from recent root spans.
+## Layout
 
-## Prerequisites
+```
+observers/postgres/monitors/grafana/
+├── README.md                                       (you are here)
+├── views.up.sql / views.down.sql                   SQL views the dashboard reads
+├── dashboards/
+│   └── witness-overview.json                       the dashboard
+├── provisioning/
+│   ├── datasources/witness.yaml                    PostgreSQL datasource pre-wired
+│   └── dashboards/witness.yaml                     loads everything in dashboards/
+├── dashboard.json                                  legacy v1 dashboard (kept for compat)
+└── plugin/                                         custom Grafana backend plugin (optional)
+```
 
-- Witness Postgres observer is configured and writing to the `witness` schema
-  (see `../../migration.up.sql`).
-- A Grafana instance with the **PostgreSQL** data source enabled.
-- The Postgres role used by Grafana has `USAGE` on the `witness` schema and
-  `SELECT` on the views below.
+## Quick start with Docker
 
-## Install
+```sh
+# 1. Apply schema (run once against your witness DB)
+#    Fresh deploy: one consolidated schema file.
+psql "$WITNESS_DB" \
+  -f ../../schema.up.sql \
+  -f ./views.up.sql
 
-1. Apply the views:
+# Upgrading an existing install that was created with the original
+# migration.up.sql? Run the incremental patches instead:
+#   psql "$WITNESS_DB" -f ../../migration_v2.up.sql -f ../../migration_v3.up.sql -f ./views.up.sql
 
-   ```sh
-   psql "$WITNESS_DB_URL" -f views.up.sql
-   ```
+# 2. Start Grafana with the dashboards & datasource provisioned in.
+docker run -d --name witness-grafana \
+  -p 3000:3000 \
+  -e GF_AUTH_ANONYMOUS_ENABLED=true \
+  -e GF_AUTH_ANONYMOUS_ORG_ROLE=Admin \
+  --add-host=host.docker.internal:host-gateway \
+  -v "$(pwd)/provisioning:/etc/grafana/provisioning" \
+  -v "$(pwd)/dashboards:/var/lib/grafana/dashboards" \
+  grafana/grafana:11.3.0
 
-   `views.up.sql` is idempotent — safe to re-run. `views.down.sql` removes
-   them.
+# 3. Open http://localhost:3000 → Dashboards → Witness → Witness — overview, logs & traces
+```
 
-2. In Grafana, add a PostgreSQL data source pointing at the witness DB.
+The provisioning files assume Postgres at `host.docker.internal:5432`. Edit
+`provisioning/datasources/witness.yaml` for other addresses.
 
-3. Import `dashboard.json`. At import time, Grafana will prompt for the
-   `DS_POSTGRES` data source — pick the one you just added.
+## How the dashboard reads witness data
 
-## Use
+Everything keys on `witness.events.trace_id` — the per-request identifier
+that `witness.Trace(ctx, "handle-work")` mints on the entry side and that
+`witness.InstanceContinue(..., parentTraceID, ...)` adopts on the receiver
+side. With this column populated, every panel scopes to a single request
+by setting the dashboard's `request_filter` toggle to `on` and selecting a
+`trace_id` from the dropdown. Before `migration_v3`, request membership
+had to be reconstructed at query time by walking `witness.spans` and
+`witness.cross_service_edges`; the dashboard uses neither once `trace_id`
+is present.
 
-The dashboard takes one variable: **Span ID**. Workflow:
+For request-level visualisations (trace graph, flat span list) the
+dashboard reads:
 
-1. Look at *Recent root spans* (bottom right). Each row is a span that has
-   no parent in the witness graph — typically an instance/service/main root.
-2. Copy a `Span ID` from that table into the **Span ID** variable at the top.
-3. The rest of the dashboard scopes to that span:
-   - **Selected span duration** — `finished_at - started_at`, NULL if the
-     span hasn't closed.
-   - **Events under span** — count of all events whose `event_span_ids`
-     contain this span_id, in the current time range.
-   - **Errors under span** — same scope, filtered to `log:error`/`log:fatal`
-     (event_type 13, 14) and the `log:error:*` subtypes (100–104).
-   - **Direct children** — count of immediate child spans.
-   - **Events under span** (logs panel) — every event under this span_id,
-     time-sorted, with severity colouring driven by `event_type`. Each row
-     shows the event message, the registered event-type name, and the
-     captured caller.
-   - **Direct child spans** — table of immediate children with their names,
-     start times, and durations.
+* `witness.span_pairs` — opens & closes joined by span_id, with `duration`.
+* `witness.span_children` — parent ↔ child derived from co-occurring spans.
+* `witness.cross_service_edges` — `parent_trace_id → child_root_span_id`
+  links produced by every `InstanceContinue` call.
 
-## What the views give you
+For global panels (volume histogram, recent requests, stats) the dashboard
+reads `witness.events` directly.
 
-| View                          | Purpose                                                     |
-|-------------------------------|-------------------------------------------------------------|
-| `witness.span_starts`         | Earliest "open" event per span_id                           |
-| `witness.span_finishes`       | Latest "close" event per span_id                            |
-| `witness.span_pairs`          | Start + finish joined, with duration (NULL if open)         |
-| `witness.span_children`       | Parent/child relation derived from span chain co-occurrence |
-| `witness.event_records_json`  | Per-event records aggregated to a JSONB column              |
-| `witness.event_type_names`    | Integer event_type → string name (mirrors `events.go`)      |
+## Customising panels for your team
 
-These are general-purpose; use them from ad-hoc SQL in Explore or build
-your own panels on top.
-
-## Known limitations
-
-- **No flame chart.** PostgreSQL data source can't drive Grafana's trace
-  visualization. For that, run a Jaeger HTTP shim on top of the witness DB
-  and point Grafana's Jaeger data source at it. Not built here yet.
-- **Span parent inference relies on timing.** `span_children` picks the
-  most-recently-started co-occurring span as the parent. This is correct
-  when start events are emitted strictly before their children's start
-  events, which is how the witness API does it. If you bulk-import or
-  replay events with skewed timestamps, parentage can flip.
-- **Dangling spans** (no finish event) show `finished_at = NULL` and
-  `duration = NULL`. They are not auto-closed at query time.
-- **Custom event types.** If you register new event types via
-  `witness.MustNewEventType`, extend `witness.event_type_names` and the
-  `CASE` in the logs-panel SQL accordingly.
-
-## Extending
-
-Useful next panels you can add:
-
-- **State timeline** over `span_pairs` rows under the selected parent —
-  rough Gantt approximation. Needs two-row-per-span output (start, finish).
-- **Top callers / messages** — `event_caller` or `event_message` aggregated
-  over the selected span and its descendants. Requires a recursive CTE
-  over `span_children`.
-- **Records inspection** — join `event_records_json` into the logs panel
-  to expose per-event key/value records.
+* Each panel's SQL is in the JSON under `targets[*].rawSql`. Keep these as
+  reviewable SQL (no string-glue), and use `${trace_id}` / `${message}` etc.
+  for the variables defined in `templating.list[*].name`.
+* When adding a new event type via `witness.MustNewEventType`, also add a
+  row to `witness.event_type_names` in `views.up.sql` so the dashboard's
+  filter dropdown surfaces it.
+* The PostgreSQL datasource ignores `format: "trace"` and `"logs"` — use
+  `"table"` and let the Logs panel auto-detect the `time`/`body` columns.

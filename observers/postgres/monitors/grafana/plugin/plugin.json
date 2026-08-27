@@ -1,0 +1,23 @@
+{
+  "type": "datasource",
+  "name": "Witness",
+  "id": "imakiri-witness-datasource",
+  "metrics": true,
+  "logs": true,
+  "tracing": true,
+  "backend": true,
+  "executable": "gpx_witness",
+  "info": {
+    "description": "Witness observability data source: search events, browse spans, and view distributed traces stored in Postgres.",
+    "author": {
+      "name": "imakiri"
+    },
+    "keywords": ["witness", "observability", "tracing", "logs", "postgres"],
+    "version": "0.1.0",
+    "updated": "2026-06-05"
+  },
+  "dependencies": {
+    "grafanaDependency": ">=10.4.0",
+    "plugins": []
+  }
+}

@@ -1,11 +1,9 @@
 package test
 
 import (
-	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/record"
 	"testing"
-	"time"
 )
 
 type Observer struct {
@@ -39,10 +37,10 @@ func NewObserver(t *testing.T, options ...Option) *Observer {
 	return o
 }
 
-func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate time.Time, eventType witness.EventType, eventMessage string, eventCaller string, records ...witness.Record) {
+func (o *Observer) Observe(event witness.Event) {
 	o.t.Helper()
-	if eventType.IsError() && o.foe {
-		o.t.Errorf("%s", o.printer.Append(nil, spanIDs, eventID, eventDate, eventType, eventMessage, eventCaller, records...))
+	if event.EventType.IsError() && o.foe {
+		o.t.Errorf("%s", o.printer.Append(nil, event))
 	}
-	o.t.Logf("%s", o.printer.Append(nil, spanIDs, eventID, eventDate, eventType, eventMessage, eventCaller, records...))
+	o.t.Logf("%s", o.printer.Append(nil, event))
 }

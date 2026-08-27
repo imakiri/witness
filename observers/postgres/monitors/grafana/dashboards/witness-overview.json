@@ -1,0 +1,286 @@
+{
+  "title": "Witness — traces, services, logs",
+  "uid": "witness-overview",
+  "tags": ["witness"],
+  "schemaVersion": 39,
+  "version": 3,
+  "timezone": "browser",
+  "time": { "from": "now-15m", "to": "now" },
+  "refresh": "10s",
+  "templating": {
+    "list": [
+      {
+        "name": "service_filter",
+        "type": "textbox",
+        "label": "Service filter (L1)",
+        "description": "Limit the recent-traces list to traces that touched this exact service name. Empty = all.",
+        "current": { "value": "", "text": "" }
+      },
+      {
+        "name": "trace_search",
+        "type": "textbox",
+        "label": "Trace search (L1)",
+        "description": "ILIKE on the originating span:instance:online event_message (the entry-point service name or root span name).",
+        "current": { "value": "", "text": "" }
+      },
+      {
+        "name": "selected_trace",
+        "type": "textbox",
+        "label": "Selected trace",
+        "description": "Set automatically by clicking a trace_id in the L1 table. Clear to hide the L2/L3 panels.",
+        "current": { "value": "", "text": "" }
+      },
+      {
+        "name": "selected_service",
+        "type": "textbox",
+        "label": "Selected service",
+        "description": "Set automatically by clicking a service in the L2 node graph or per-service bar chart. Clear to view logs of all services in the trace.",
+        "current": { "value": "", "text": "" }
+      },
+      {
+        "name": "selected_span",
+        "type": "textbox",
+        "label": "Selected span",
+        "description": "Set automatically by clicking a span row in the L2 spans table. Overrides the service filter — L3 shows only events whose span chain contains this span_id. Clear to fall back to (trace, service) scoping.",
+        "current": { "value": "", "text": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "L1 — recent traces",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 },
+      "id": 100
+    },
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Recent traces — click a trace_id to drill into L2/L3",
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "witness-pg" },
+      "gridPos": { "x": 0, "y": 1, "w": 24, "h": 11 },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "left" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "trace_id" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Drill into this trace",
+                    "url": "/d/witness-overview?orgId=1&var-selected_trace=${__data.fields.trace_id}&var-selected_service=&var-selected_span=&var-trace_search=${trace_search}&var-service_filter=${service_filter}&${__url_time_range}"
+                  }
+                ]
+              },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "duration_ms" },
+            "properties": [
+              { "id": "unit", "value": "ms" },
+              { "id": "displayName", "value": "duration" },
+              { "id": "custom.cellOptions", "value": { "type": "gauge", "mode": "gradient" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "started_at" },
+            "properties": [{ "id": "displayName", "value": "started" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "event_count" },
+            "properties": [{ "id": "displayName", "value": "events" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "error_count" },
+            "properties": [
+              { "id": "displayName", "value": "errors" },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "red", "value": 1 }
+                  ]
+                }
+              },
+              { "id": "custom.cellOptions", "value": { "type": "color-background", "mode": "gradient" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "services" },
+            "properties": [
+              { "id": "displayName", "value": "services" },
+              { "id": "custom.width", "value": 280 }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT e.trace_id::text AS trace_id, min(e.event_date) AS started_at, ROUND((EXTRACT(epoch FROM (max(e.event_date) - min(e.event_date))) * 1000)::numeric, 2) AS duration_ms, count(*)::bigint AS event_count, count(*) FILTER (WHERE e.event_type IN (13, 14, 100, 101, 102, 103, 104))::bigint AS error_count, COALESCE(string_agg(DISTINCT e.service_name, ', '), '') AS services FROM witness.events e WHERE e.trace_id IS NOT NULL AND e.event_date >= $__timeFrom()::timestamp AND e.event_date <= $__timeTo()::timestamp AND ('$service_filter' = '' OR e.trace_id IN (SELECT trace_id FROM witness.events WHERE service_name = '$service_filter' AND trace_id IS NOT NULL)) AND ('$trace_search' = '' OR e.trace_id IN (SELECT trace_id FROM witness.events WHERE event_type = 21 AND event_message ILIKE '%' || '$trace_search' || '%' AND trace_id IS NOT NULL)) GROUP BY e.trace_id ORDER BY started_at DESC LIMIT 500"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "L2 — anatomy of selected trace",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 1 },
+      "id": 101
+    },
+    {
+      "id": 2,
+      "type": "nodeGraph",
+      "title": "Service call graph — trace $selected_trace",
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "witness-pg" },
+      "gridPos": { "x": 0, "y": 13, "w": 12, "h": 12 },
+      "options": {},
+      "targets": [
+        {
+          "refId": "nodes",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ts.service_name AS id, ts.service_name AS title, 'service' AS \"subTitle\", ts.event_count::float8 AS \"mainStat\", (CASE WHEN ts.error_count > 0 THEN ts.error_count::text || ' errors' ELSE ROUND((EXTRACT(epoch FROM (ts.last_event_at - ts.first_event_at)) * 1000)::numeric, 1)::text || ' ms span' END) AS \"secondaryStat\" FROM witness.trace_services ts WHERE ts.trace_id = (CASE WHEN '${selected_trace}' = '' THEN '00000000-0000-0000-0000-000000000000' ELSE '${selected_trace}' END)::uuid UNION ALL SELECT '— select trace —' AS id, 'click a row in L1' AS title, '' AS \"subTitle\", 0::float8 AS \"mainStat\", '' AS \"secondaryStat\" WHERE '${selected_trace}' = ''"
+        },
+        {
+          "refId": "edges",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (cse.parent_service_name || '->' || cse.child_service_name) AS id, cse.parent_service_name AS source, cse.child_service_name AS target, count(*)::float8 AS \"mainStat\" FROM witness.cross_service_edges cse JOIN witness.events child ON child.event_id = cse.child_event_id WHERE child.trace_id = (CASE WHEN '${selected_trace}' = '' THEN '00000000-0000-0000-0000-000000000000' ELSE '${selected_trace}' END)::uuid AND cse.parent_service_name IS NOT NULL AND cse.child_service_name IS NOT NULL GROUP BY cse.parent_service_name, cse.child_service_name UNION ALL SELECT 'placeholder'::text AS id, ''::text AS source, ''::text AS target, 0::float8 AS \"mainStat\" WHERE FALSE"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "barchart",
+      "title": "Per-service events in trace — click a bar to scope L3 logs",
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "witness-pg" },
+      "gridPos": { "x": 12, "y": 13, "w": 12, "h": 12 },
+      "options": {
+        "orientation": "horizontal",
+        "stacking": "normal",
+        "showValue": "auto",
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "axisCenteredZero": false, "axisPlacement": "auto" },
+          "links": [
+            {
+              "title": "Scope L3 logs to this service",
+              "url": "/d/witness-overview?orgId=1&var-selected_trace=${selected_trace}&var-selected_service=${__data.fields.service_name}&var-selected_span=&var-trace_search=${trace_search}&var-service_filter=${service_filter}&${__url_time_range}"
+            }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ts.service_name, ts.event_count::bigint AS events, ts.error_count::bigint AS errors FROM witness.trace_services ts WHERE ts.trace_id = (CASE WHEN '${selected_trace}' = '' THEN '00000000-0000-0000-0000-000000000000' ELSE '${selected_trace}' END)::uuid ORDER BY ts.first_event_at ASC"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Spans of trace — duration & parent chain",
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "witness-pg" },
+      "gridPos": { "x": 0, "y": 25, "w": 24, "h": 10 },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "left" } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "duration_ms" },
+            "properties": [
+              { "id": "unit", "value": "ms" },
+              { "id": "custom.cellOptions", "value": { "type": "gauge", "mode": "gradient" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "span_name" },
+            "properties": [
+              { "id": "displayName", "value": "span" },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Show logs of this span in L3",
+                    "url": "/d/witness-overview?orgId=1&var-selected_trace=${selected_trace}&var-selected_span=${__data.fields.span_id}&var-selected_service=&var-trace_search=${trace_search}&var-service_filter=${service_filter}&${__url_time_range}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "service_name" },
+            "properties": [
+              { "id": "displayName", "value": "service" },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Scope L3 logs to this service",
+                    "url": "/d/witness-overview?orgId=1&var-selected_trace=${selected_trace}&var-selected_service=${__data.fields.service_name}&var-selected_span=&var-trace_search=${trace_search}&var-service_filter=${service_filter}&${__url_time_range}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH trace_spans AS (SELECT DISTINCT s.span_id FROM witness.events e JOIN witness.spans s USING (event_id) WHERE e.trace_id = (CASE WHEN '${selected_trace}' = '' THEN '00000000-0000-0000-0000-000000000000' ELSE '${selected_trace}' END)::uuid) SELECT sp.span_name, sp.service_name, sp.started_at, ROUND((EXTRACT(epoch FROM sp.duration) * 1000)::numeric, 2) AS duration_ms, sc.parent_span_id::text AS parent_span_id, sp.span_id::text AS span_id, sp.start_caller AS caller FROM witness.span_pairs sp LEFT JOIN witness.span_children sc ON sc.child_span_id = sp.span_id WHERE sp.span_id IN (SELECT span_id FROM trace_spans) ORDER BY sp.started_at ASC LIMIT 500"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "L3 — logs (trace → service → span drill-down)",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 35, "w": 24, "h": 1 },
+      "id": 102
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Logs — trace $selected_trace · service ${selected_service:text} · span ${selected_span:text}",
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "witness-pg" },
+      "gridPos": { "x": 0, "y": 36, "w": 24, "h": 14 },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Ascending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (e.event_date AT TIME ZONE 'UTC') AS time, e.event_message AS body, COALESCE(etn.event_type_name, e.event_type::text) AS level, COALESCE(e.service_name, '<unknown>') AS service, owner.span_name AS span, e.event_caller AS caller, e.event_id::text AS id, COALESCE(e.trace_id::text, '') AS trace_id, COALESCE(erj.records::text, '{}') AS labels FROM witness.events e LEFT JOIN witness.event_type_names etn USING (event_type) LEFT JOIN witness.event_records_json erj USING (event_id) LEFT JOIN LATERAL (SELECT sp.span_name FROM witness.spans s JOIN witness.span_pairs sp ON sp.span_id = s.span_id WHERE s.event_id = e.event_id ORDER BY sp.started_at DESC LIMIT 1) owner ON TRUE WHERE e.trace_id = (CASE WHEN '${selected_trace}' = '' THEN '00000000-0000-0000-0000-000000000000' ELSE '${selected_trace}' END)::uuid AND ('${selected_span}' = '' OR e.event_id IN (SELECT event_id FROM witness.spans WHERE span_id = (CASE WHEN '${selected_span}' = '' THEN '00000000-0000-0000-0000-000000000000' ELSE '${selected_span}' END)::uuid)) AND ('${selected_span}' != '' OR '${selected_service}' = '' OR e.service_name = '${selected_service}') ORDER BY e.event_date ASC LIMIT 2000"
+        }
+      ]
+    }
+  ]
+}

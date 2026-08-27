@@ -2,6 +2,26 @@
 
 #### _Better than OTEL_
 
+Upgrading from v0.x: see [`MIGRATION.md`](./MIGRATION.md).
+
+## Install
+
+Pick whichever fits:
+
+```sh
+# everything — root + all observers + adapters, one require line
+go get github.com/imakiri/witness/all@v1.0.0-dev
+
+# selective — pull only the pieces you need
+go get github.com/imakiri/witness@v1.0.0-dev
+go get github.com/imakiri/witness/observers/stdlog@v1.0.0-dev
+go get github.com/imakiri/witness/observers/otlp@v1.0.0-dev
+```
+
+In code, always import each package from its original path
+(`witness/observers/otlp`, etc.); `witness/all` is just a dependency
+aggregator, it does not re-export.
+
 It's a data model, an observability API and set of its implementations. It combines metrics, logs and traces into one
 data entity called event.
 
@@ -84,6 +104,32 @@ request, message queue, gRPC call), the sender places the span_id into a carrier
 (HTTP header, message envelope field, gRPC metadata) and the receiver chains it into its own
 witness context. The data model only cares that both sides emit events whose `event_span_ids`
 contain the shared span_id — nothing else is required to reconnect the trace at query time.
+
+## OTLP export
+
+`observers/otlp` turns witness spans into OTel spans and ships them to any
+OTLP collector — Jaeger, Tempo, Grafana Cloud, etc. Combine with other
+observers via `tee`:
+
+```go
+tp, _ := otlp.NewTraceProvider(ctx, otlp.ProviderConfig{
+    Protocol: otlp.ProtocolGRPC,
+    Endpoint: "otel-collector:4317",
+    Insecure: true,
+})
+otlpObs, _ := otlp.NewObserver(otlp.Config{Provider: tp})
+defer otlpObs.Shutdown(ctx)
+
+ctx, finish := witness.Instance(ctx,
+    tee.NewObserver(stdlog.NewObserver(), otlpObs),
+    "my_service", "v1")
+defer finish()
+```
+
+The trace_id is the first 16 bytes of the root witness span_id; the span_id
+is the last 8 bytes of the current one. Both are raw byte copies, so the
+same UUID appears in Jaeger and in the Postgres tables. For cross-process
+propagation use `otlp.Inject` / `otlp.Extract` over W3C `traceparent`.
 
 ## Notes
 

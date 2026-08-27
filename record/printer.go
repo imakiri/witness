@@ -63,41 +63,49 @@ func (p *Printer) appendTime(b []byte, t time.Time) []byte {
 	return t.AppendFormat(b, "2006-01-02T15:04:05.000000000Z07:00")
 }
 
-func (p *Printer) Append(dst []byte, spanIDs []uuid.UUID, eventID uuid.UUID, eventDate time.Time, eventType witness.EventType, eventMessage string, eventCaller string, records ...witness.Record) []byte {
+func (p *Printer) Append(dst []byte, event witness.Event) []byte {
 	p.mu.Lock()
-	p.maxEventCallerLength = max(p.maxEventCallerLength, utf8.RuneCountInString(eventCaller))
-	p.maxEventMessageLength = max(p.maxEventMessageLength, utf8.RuneCountInString(eventMessage))
-	p.maxEventTypeLength = max(p.maxEventTypeLength, utf8.RuneCountInString(eventType.String()))
-	var eventCallerSpace = strings.Repeat(" ", p.maxEventCallerLength-utf8.RuneCountInString(eventCaller))
-	var eventTypeSpace = strings.Repeat(" ", p.maxEventTypeLength-utf8.RuneCountInString(eventType.String()))
-	var eventMessageSpace = strings.Repeat(" ", p.maxEventMessageLength-utf8.RuneCountInString(eventMessage))
+	p.maxEventCallerLength = max(p.maxEventCallerLength, utf8.RuneCountInString(event.EventCaller))
+	p.maxEventMessageLength = max(p.maxEventMessageLength, utf8.RuneCountInString(event.EventMessage))
+	p.maxEventTypeLength = max(p.maxEventTypeLength, utf8.RuneCountInString(event.EventType.String()))
+	var eventCallerSpace = strings.Repeat(" ", p.maxEventCallerLength-utf8.RuneCountInString(event.EventCaller))
+	var eventTypeSpace = strings.Repeat(" ", p.maxEventTypeLength-utf8.RuneCountInString(event.EventType.String()))
+	var eventMessageSpace = strings.Repeat(" ", p.maxEventMessageLength-utf8.RuneCountInString(event.EventMessage))
 	p.mu.Unlock()
 
 	dst = append(dst, '\n')
-	dst = p.appendTime(dst, eventDate)
+	dst = p.appendTime(dst, event.EventDate)
 	dst = append(dst, ' ')
-	dst = base64.StdEncoding.AppendEncode(dst, eventID.Bytes())
+	// trace_id is fixed-width (22 chars base64) or 22 spaces when absent —
+	// keeps columns aligned so grep / awk pipelines stay simple.
+	if event.TraceID != uuid.Nil {
+		dst = base64.StdEncoding.AppendEncode(dst, event.TraceID.Bytes())
+	} else {
+		dst = append(dst, strings.Repeat(" ", 22)...)
+	}
+	dst = append(dst, ' ')
+	dst = base64.StdEncoding.AppendEncode(dst, event.EventID.Bytes())
 	dst = append(dst, ' ')
 	if p.printCaller {
-		dst = append(dst, eventCaller...)
+		dst = append(dst, event.EventCaller...)
 		dst = append(dst, eventCallerSpace...)
 		dst = append(dst, ' ')
 	}
-	dst = eventType.Append(dst)
+	dst = event.EventType.Append(dst)
 	dst = append(dst, eventTypeSpace...)
 	dst = append(dst, ' ')
-	dst = append(dst, eventMessage...)
+	dst = append(dst, event.EventMessage...)
 	dst = append(dst, eventMessageSpace...)
 	dst = append(dst, ' ')
 	dst = append(dst, '[')
-	for i, sid := range spanIDs {
+	for i, sid := range event.SpanIDs {
 		if i != 0 {
 			dst = append(dst, ' ')
 		}
 		dst = base64.StdEncoding.AppendEncode(dst, sid.Bytes())
 	}
 	dst = append(dst, ']')
-	for _, r := range records {
+	for _, r := range event.Records {
 		dst = append(dst, "\n\t"...)
 		dst = r.AppendKey(dst)
 		dst = append(dst, ": \""...)
@@ -107,10 +115,10 @@ func (p *Printer) Append(dst []byte, spanIDs []uuid.UUID, eventID uuid.UUID, eve
 	return dst
 }
 
-func (p *Printer) Print(writer io.Writer, spanIDs []uuid.UUID, eventID uuid.UUID, eventDate time.Time, eventType witness.EventType, eventMessage string, eventCaller string, records ...witness.Record) {
+func (p *Printer) Print(writer io.Writer, event witness.Event) {
 	var buf = p.bufPool.Get().([]byte)
 	buf = buf[0:0]
-	buf = p.Append(buf, spanIDs, eventID, eventDate, eventType, eventMessage, eventCaller, records...)
+	buf = p.Append(buf, event)
 	_, _ = writer.Write(buf)
 	p.bufPool.Put(buf)
 }

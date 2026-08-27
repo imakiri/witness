@@ -1,0 +1,21 @@
+# Provisioned PostgreSQL data source pointing at the witness DB.
+# Mount this directory at /etc/grafana/provisioning when starting Grafana.
+
+apiVersion: 1
+datasources:
+  - name: Witness-PG
+    type: postgres
+    uid: witness-pg
+    access: proxy
+    # When Grafana runs in Docker on a host that also runs Postgres, the
+    # database is reachable via `host.docker.internal`. Override the URL via
+    # GF_DATASOURCES_DEFAULT_URL or edit this file for other topologies.
+    url: host.docker.internal:5432
+    user: witness
+    database: witness
+    isDefault: true
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+    secureJsonData:
+      password: witness

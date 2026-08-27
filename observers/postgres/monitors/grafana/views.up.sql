@@ -21,7 +21,8 @@ SELECT DISTINCT ON (s.span_id)
     e.event_date    AS started_at,
     e.event_type    AS start_event_type,
     e.event_message AS span_name,
-    e.event_caller  AS start_caller
+    e.event_caller  AS start_caller,
+    e.service_name  AS service_name
 FROM witness.events e
 JOIN witness.spans s ON s.event_id = e.event_id
 WHERE e.event_type BETWEEN 20 AND 29
@@ -52,7 +53,8 @@ SELECT
     sf.finished_at,
     (sf.finished_at - ss.started_at) AS duration,
     ss.start_caller,
-    sf.finish_caller
+    sf.finish_caller,
+    ss.service_name
 FROM witness.span_starts ss
 LEFT JOIN witness.span_finishes sf USING (span_id);
 
@@ -74,6 +76,54 @@ JOIN witness.spans sibling
 JOIN witness.span_starts parent
     ON parent.span_id = sibling.span_id
 ORDER BY child.span_id, parent.started_at DESC;
+
+-- Cross-service edges: a continued instance (span:instance:online with a
+-- non-null parent_trace_id) hung off an upstream span. parent_span_id points
+-- to the parent operation; child_root_span_id is the new instance's root.
+-- Requires migration_v2 (parent_trace_id / parent_span_id columns).
+--
+-- parent_span_id arrives over the wire in W3C traceparent format — only the
+-- last 8 bytes survive. We store it as a uuid padded into the low half
+-- (00000000-0000-0000-XXXX-XXXXXXXXXXXX), so the JOIN to span_starts has to
+-- match on the last 8 bytes of the original uuid v7 rather than the whole
+-- value. Collisions for uuid v7 tails are vanishingly rare.
+CREATE OR REPLACE VIEW witness.cross_service_edges AS
+SELECT
+    e.event_id                  AS child_event_id,
+    s.span_id                   AS child_root_span_id,
+    e.event_message             AS child_instance_name,
+    e.service_name              AS child_service_name,
+    e.event_date                AS linked_at,
+    e.parent_trace_id           AS parent_trace_id,
+    e.parent_span_id            AS parent_span_id,
+    parent_start.span_name      AS parent_span_name,
+    parent_start.service_name   AS parent_service_name,
+    parent_start.start_event_id AS parent_event_id
+FROM witness.events e
+JOIN witness.spans  s ON s.event_id = e.event_id
+LEFT JOIN witness.span_starts parent_start
+       ON right(parent_start.span_id::text, 17) = right(e.parent_span_id::text, 17)
+WHERE e.event_type = 21 -- span:instance:online
+  AND e.parent_trace_id IS NOT NULL;
+
+-- Per-trace service participation: which services touched this trace, when
+-- they first/last emitted, and how many events they produced. Powers the
+-- "Services involved" column on the L1 traces table and the per-service
+-- breakdown on L2.
+CREATE OR REPLACE VIEW witness.trace_services AS
+SELECT
+    e.trace_id,
+    e.service_name,
+    min(e.event_date)                  AS first_event_at,
+    max(e.event_date)                  AS last_event_at,
+    count(*)                           AS event_count,
+    count(*) FILTER (
+        WHERE e.event_type IN (13, 14, 100, 101, 102, 103, 104)
+    )                                  AS error_count
+FROM witness.events e
+WHERE e.trace_id     IS NOT NULL
+  AND e.service_name IS NOT NULL
+GROUP BY e.trace_id, e.service_name;
 
 -- Records aggregated to a single JSONB column per event.
 CREATE OR REPLACE VIEW witness.event_records_json AS

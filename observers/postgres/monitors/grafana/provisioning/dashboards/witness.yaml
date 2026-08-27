@@ -1,0 +1,11 @@
+# Provisioned dashboard provider — loads every JSON under /var/lib/grafana/dashboards
+# into the "Witness" folder. Mount ../dashboards there.
+
+apiVersion: 1
+providers:
+  - name: Witness
+    folder: Witness
+    type: file
+    disableDeletion: false
+    options:
+      path: /var/lib/grafana/dashboards
