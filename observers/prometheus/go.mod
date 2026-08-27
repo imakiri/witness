@@ -3,7 +3,7 @@ module github.com/imakiri/witness/observers/prometheus
 go 1.23.1
 
 require (
-	github.com/imakiri/witness v0.28.0
+	github.com/imakiri/witness v0.29.0
 	github.com/prometheus/client_golang v1.20.5
 )
 
