@@ -1,51 +1,56 @@
 package stdlog
 
 import (
-	"encoding/base64"
 	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/record"
 	"os"
-	"strings"
-	"sync"
+	"slices"
 	"time"
-	"unicode/utf8"
 )
 
 type Observer struct {
-	bufPool               *sync.Pool
-	mu                    *sync.Mutex
-	maxEventMessageLength int
-	maxEventValueLength   int
-	maxEventCallerLength  int
-	formatter             record.Formatter
-	printCaller           bool
+	useStdErr      bool
+	types          []witness.EventType
+	printerOptions []record.PrinterOption
+	printer        *record.Printer
 }
 
 type Option func(o *Observer)
 
-func WithPrintCaller(value bool) Option {
+func WithTypes(types []witness.EventType) Option {
 	return func(o *Observer) {
-		o.printCaller = value
+		o.types = types
+	}
+}
+
+func WithUsingStdErr() Option {
+	return func(o *Observer) {
+		o.useStdErr = true
+	}
+}
+
+func WithPrinterOptions(options ...record.PrinterOption) Option {
+	return func(o *Observer) {
+		o.printerOptions = options
 	}
 }
 
 func NewObserver(options ...Option) *Observer {
-	var bufPool = new(sync.Pool)
-	bufPool.New = func() any {
-		return make([]byte, 0, 256)
-	}
-	var o = &Observer{
-		bufPool: bufPool,
-		mu:      new(sync.Mutex),
-		//maxEventMessageLength: 8,
-		maxEventValueLength: 8,
-		formatter:           record.DefaultFormatter{},
-		printCaller:         true,
-	}
+	var o = new(Observer)
 	for _, opt := range options {
 		opt(o)
 	}
+
+	if o.types == nil {
+		o.types = witness.Events()
+	}
+	slices.SortFunc(o.types, witness.EventTypesCompare)
+
+	o.printer = record.NewPrinter(append([]record.PrinterOption{
+		record.PrinterWithMaxEventTypeLength(witness.CalcMaxEventValueLength(o.types)),
+	}, o.printerOptions...)...)
+
 	return o
 }
 
@@ -53,57 +58,12 @@ func (o *Observer) appendTime(b []byte, t time.Time) []byte {
 	return t.AppendFormat(b, "2006-01-02T15:04:05.000000000Z07:00")
 }
 
-func (o *Observer) Observe(event witness.Event) {
-	o.mu.Lock()
-	o.maxEventCallerLength = max(o.maxEventCallerLength, utf8.RuneCountInString(event.EventCaller))
-	o.maxEventMessageLength = max(o.maxEventMessageLength, utf8.RuneCountInString(event.EventMessage))
-	var eventCallerSpace = strings.Repeat(" ", o.maxEventCallerLength-utf8.RuneCountInString(event.EventCaller))
-	var eventTypeSpace = strings.Repeat(" ", witness.MaxEventValueLength()-utf8.RuneCountInString(event.EventType.String()))
-	var eventMessageSpace = strings.Repeat(" ", o.maxEventMessageLength-utf8.RuneCountInString(event.EventMessage))
-	o.mu.Unlock()
-
-	var buf = o.bufPool.Get().([]byte)
-	buf = buf[0:0]
-	buf = append(buf, '\n')
-	buf = o.appendTime(buf, event.EventDate)
-	buf = append(buf, ' ')
-	// trace_id is fixed-width (22 chars base64) or 22 spaces when absent —
-	// keeps columns aligned so grep / awk pipelines stay simple.
-	if event.TraceID != uuid.Nil {
-		buf = base64.StdEncoding.AppendEncode(buf, event.TraceID.Bytes())
-	} else {
-		buf = append(buf, strings.Repeat(" ", 22)...)
+func (o *Observer) Observe(spanIDs []uuid.UUID, eventID uuid.UUID, eventDate time.Time, eventType witness.EventType, eventMessage string, eventCaller string, records ...witness.Record) {
+	if _, found := slices.BinarySearchFunc(o.types, eventType, witness.EventTypesCompare); !found {
+		return
 	}
-	buf = append(buf, ' ')
-	buf = base64.StdEncoding.AppendEncode(buf, event.EventID.Bytes())
-	buf = append(buf, ' ')
-	if o.printCaller {
-		buf = append(buf, event.EventCaller...)
-		buf = append(buf, eventCallerSpace...)
-		buf = append(buf, ' ')
+	if eventType.IsError() && o.useStdErr {
+		o.printer.Print(os.Stderr, spanIDs, eventID, eventDate, eventType, eventMessage, eventCaller, records...)
 	}
-	buf = event.EventType.Append(buf)
-	buf = append(buf, eventTypeSpace...)
-	buf = append(buf, ' ')
-	buf = append(buf, event.EventMessage...)
-	buf = append(buf, eventMessageSpace...)
-	buf = append(buf, ' ')
-	buf = append(buf, '[')
-	for i, sid := range event.SpanIDs {
-		if i != 0 {
-			buf = append(buf, ' ')
-		}
-		buf = base64.StdEncoding.AppendEncode(buf, sid.Bytes())
-	}
-	buf = append(buf, ']')
-	for _, rcd := range event.Records {
-		buf = append(buf, "\n\t"...)
-		buf = rcd.AppendKey(buf)
-		buf = append(buf, ": \""...)
-		buf = rcd.AppendValue(buf)
-		buf = append(buf, "\""...)
-	}
-
-	_, _ = os.Stdout.Write(buf)
-	o.bufPool.Put(buf)
+	o.printer.Print(os.Stdout, spanIDs, eventID, eventDate, eventType, eventMessage, eventCaller, records...)
 }
