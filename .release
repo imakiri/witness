@@ -1,7 +1,2 @@
-adapters/log/v0.4.0
-observers/postgres/v0.2.0
-observers/stdlog/v0.22.0
-observers/tee/v0.5.0
-observers/test/v0.3.0
-record/v0.19.0
-v0.28.0
+observers/otlp/v0.1.0
+observers/prometheus/v0.1.0
