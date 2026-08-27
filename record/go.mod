@@ -1,8 +1,12 @@
 module github.com/imakiri/witness/record
 
-go 1.23.1
+go 1.25
 
-require github.com/stretchr/testify v1.9.0
+require (
+	github.com/gofrs/uuid/v5 v5.5.1
+	github.com/imakiri/witness v0.27.0
+	github.com/stretchr/testify v1.10.0
+)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
