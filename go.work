@@ -3,7 +3,6 @@ go 1.26.5
 use (
 	.
 	./adapters/log
-	./all
 	./examples
 	./examples/distributed
 	./observers/otlp
@@ -11,6 +10,6 @@ use (
 	./observers/prometheus
 	./observers/stdlog
 	./observers/tee
-	./record
 	./observers/test
+	./record
 )
