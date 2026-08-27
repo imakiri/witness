@@ -10,7 +10,7 @@
 #
 # Also sourced by scripts/release.sh for the helpers below.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.."
 
 MODS=$(sed -n '/^use (/,/^)/p' go.work | sed -n 's|^[[:space:]]*\(\.[^ ]*\)$|\1|p' | sed 's|^\./||')
 tagpfx() { [ "$1" = "." ] && echo "" || echo "$1/"; }       # "." is the root module
