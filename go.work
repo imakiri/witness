@@ -1,4 +1,4 @@
-go 1.23.3
+go 1.26.5
 
 use (
 	.
@@ -9,4 +9,5 @@ use (
 	./observers/stdlog
 	./observers/tee
 	./record
+	./observers/test
 )

@@ -26,27 +26,51 @@ func appendError(records []Record, err error) []Record {
 }
 
 func Observe(ctx context.Context, eventID uuid.UUID, eventDate time.Time, eventType EventType, eventName string, records ...Record) {
-	From(ctx).Observe(eventID, eventDate, eventType, eventName, caller(1, 0), records...)
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.Observe(eventID, eventDate, eventType, eventName, caller(1, 0), records...)
 }
 
 func Info(ctx context.Context, msg string, records ...Record) {
-	From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), msg, caller(1, 0), records...)
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), msg, caller(1, 0), records...)
 }
 
 func Warn(ctx context.Context, msg string, records ...Record) {
-	From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogWarn(), msg, caller(1, 0), records...)
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogWarn(), msg, caller(1, 0), records...)
 }
 
 func Debug(ctx context.Context, msg string, records ...Record) {
-	From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogDebug(), msg, caller(1, 0), records...)
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogDebug(), msg, caller(1, 0), records...)
 }
 
 func Error(ctx context.Context, msg string, err error, records ...Record) {
-	From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
 }
 
 func ErrorF(ctx context.Context, msg string, err error, records ...Record) error {
-	From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
@@ -54,19 +78,32 @@ func ErrorF(ctx context.Context, msg string, err error, records ...Record) error
 }
 
 func ErrorOrInfo(ctx context.Context, okMsg, errMsg string, err error, records ...Record) {
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
 	if err != nil {
-		From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), errMsg, caller(1, 0), appendError(records, err)...)
+		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), errMsg, caller(1, 0), appendError(records, err)...)
 	} else {
-		From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), okMsg, caller(1, 0), records...)
+
+		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), okMsg, caller(1, 0), records...)
 	}
 }
 
 func ErrorStorage(ctx context.Context, msg string, err error, records ...Record) {
-	From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorStorage(), msg, caller(1, 0), appendError(records, err)...)
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorStorage(), msg, caller(1, 0), appendError(records, err)...)
 }
 
 func ErrorStorageF(ctx context.Context, msg string, err error, records ...Record) error {
-	From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorStorage(), msg, caller(1, 0), appendError(records, err)...)
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorStorage(), msg, caller(1, 0), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
@@ -74,11 +111,19 @@ func ErrorStorageF(ctx context.Context, msg string, err error, records ...Record
 }
 
 func ErrorNetwork(ctx context.Context, msg string, err error, records ...Record) {
-	From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorNetwork(), msg, caller(1, 0), appendError(records, err)...)
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorNetwork(), msg, caller(1, 0), appendError(records, err)...)
 }
 
 func ErrorNetworkF(ctx context.Context, msg string, err error, records ...Record) error {
-	From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorNetwork(), msg, caller(1, 0), appendError(records, err)...)
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorNetwork(), msg, caller(1, 0), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
@@ -86,11 +131,19 @@ func ErrorNetworkF(ctx context.Context, msg string, err error, records ...Record
 }
 
 func ErrorExternal(ctx context.Context, msg string, err error, records ...Record) {
-	From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorExternal(), msg, caller(1, 0), appendError(records, err)...)
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorExternal(), msg, caller(1, 0), appendError(records, err)...)
 }
 
 func ErrorExternalF(ctx context.Context, msg string, err error, records ...Record) error {
-	From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorExternal(), msg, caller(1, 0), appendError(records, err)...)
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorExternal(), msg, caller(1, 0), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
@@ -98,11 +151,19 @@ func ErrorExternalF(ctx context.Context, msg string, err error, records ...Recor
 }
 
 func ErrorInternal(ctx context.Context, msg string, err error, records ...Record) {
-	From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorInternal(), msg, caller(1, 0), appendError(records, err)...)
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorInternal(), msg, caller(1, 0), appendError(records, err)...)
 }
 
 func ErrorInternalF(ctx context.Context, msg string, err error, records ...Record) error {
-	From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorInternal(), msg, caller(1, 0), appendError(records, err)...)
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorInternal(), msg, caller(1, 0), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
@@ -111,23 +172,35 @@ func ErrorInternalF(ctx context.Context, msg string, err error, records ...Recor
 
 func Span(ctx context.Context, spanName string, records ...Record) (context.Context, Finish) {
 	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
 	var nc = Context{
 		observer: c.observer,
 		spanIDs:  append(slices.Clone(c.spanIDs), uuid.Must(uuid.NewV7())),
 	}
 	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, caller(1, 0), records...)
 	return nc.To(ctx), func(records ...Record) {
+		if nc.t != nil {
+			c.t.Helper()
+		}
 		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, caller(0, 1), records...)
 	}
 }
 
 func SpanStart(ctx context.Context, spanID uuid.UUID, spanName string, records ...Record) {
 	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
 	c.Observer().Observe(append(slices.Clone(c.spanIDs), spanID), uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, caller(1, 0), records...)
 }
 
 func SpanFinish(ctx context.Context, spanID uuid.UUID, spanName string, records ...Record) {
 	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
 	c.Observer().Observe(append(slices.Clone(c.spanIDs), spanID), uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, caller(0, 1), records...)
 }
 
