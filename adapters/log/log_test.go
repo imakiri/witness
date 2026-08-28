@@ -4,11 +4,18 @@ import (
 	"context"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/observers/stdlog"
+	"github.com/imakiri/witness/printers"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
 func TestLog(t *testing.T) {
-	var observer = stdlog.NewObserver()
+	printer, err := printers.NewPretty()
+	require.NoError(t, err)
+
+	observer, err := stdlog.NewObserver(printer)
+	require.NoError(t, err)
+
 	var ctx, finish = witness.Instance(context.Background(), observer, "test-log", "1")
 	defer finish()
 

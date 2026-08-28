@@ -4,7 +4,7 @@ go 1.25
 
 require (
 	github.com/gofrs/uuid/v5 v5.5.1
-	github.com/imakiri/witness v0.29.0
+	github.com/imakiri/witness v0.30.0
 	github.com/imakiri/witness/observers/postgres v0.2.0
 	github.com/imakiri/witness/record v0.19.0
 	github.com/jackc/pgx/v5 v5.7.1
@@ -18,3 +18,9 @@ require (
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/text v0.18.0 // indirect
 )
+
+replace github.com/imakiri/witness => ../..
+
+replace github.com/imakiri/witness/observers/postgres => ../../observers/postgres
+
+replace github.com/imakiri/witness/record => ../../record

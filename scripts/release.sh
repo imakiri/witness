@@ -8,7 +8,8 @@
 #   scripts/release.sh sync                                  # go.work replaces only
 #
 # prepare: tidy, bump the listed modules, rewrite every intra-repo require to
-# the resulting versions, refresh the go.work replaces, record the tags in
+# the resulting versions, refresh the go.work replaces, run the tests of every
+# bumped module, record the tags in
 # ./.release. Leaves the changes in
 # the working tree -- committing and pushing is up to you.
 # tag: verify ./.release arrived on origin/main, then tag that commit and push.
@@ -91,6 +92,17 @@ pushed() {
   printf '%s\n' "$REMOTE_TAGS" | grep -qx "$1"
 }
 
+# Nothing gets a version until its tests pass: sync_gowork runs first so the
+# workspace resolves the versions this run is about to create.
+test_bumped() {
+  local d
+  for d in "$@"; do
+    [ -n "${MODDIRS[$d]:-}" ] || continue
+    echo "test $d"
+    ( cd "$d" && go test ./... ) || { echo "tests failed in $d -- nothing prepared" >&2; exit 1; }
+  done
+}
+
 prepare() {
   # no args: bump the minor of whatever module you are standing in
   if [ $# -eq 0 ]; then
@@ -149,6 +161,8 @@ prepare() {
   done
 
   sync_gowork
+  # RELVER now holds this run's args plus any still-pending .release entries
+  test_bumped "${!RELVER[@]}"
 
   printf '%s\n' "${tags[@]}" | sort > .release
   echo "prepared: $(tr '\n' ' ' < .release)"
