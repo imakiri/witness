@@ -5,6 +5,7 @@ use (
 	./adapters/log
 	./examples
 	./examples/distributed
+	./observers/multi
 	./observers/otlp
 	./observers/postgres
 	./observers/prometheus

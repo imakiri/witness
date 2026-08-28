@@ -33,7 +33,7 @@ func WithUsingStdErr() Option {
 
 func WithFlags(flags ...witness.PrintFlags) Option {
 	return func(o *Observer) error {
-		o.flags = 0
+		o.flags = witness.PrintNone
 		for _, f := range flags {
 			o.flags |= f
 		}
@@ -44,7 +44,7 @@ func WithFlags(flags ...witness.PrintFlags) Option {
 func NewObserver(printer witness.Printer, options ...Option) (*Observer, error) {
 	var o = &Observer{
 		printer: printer,
-		flags:   ^witness.PrintFlags(0),
+		flags:   witness.PrintAll,
 	}
 
 	for i, option := range options {

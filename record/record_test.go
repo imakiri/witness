@@ -29,7 +29,7 @@ func TestStruct1(t *testing.T) {
 		},
 	}
 
-	var marshaller = Marshaller[DefaultFormatter]{
+	var marshaller = Marshaller[DefaultKeyJoiner]{
 		MaxDepth: 16,
 	}
 

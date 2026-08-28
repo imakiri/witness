@@ -49,7 +49,7 @@ func (p *Pretty) Append(dst []byte, event witness.Event, flags witness.PrintFlag
 	var eventMessageSpace = strings.Repeat(" ", p.maxEventMessageLength-utf8.RuneCountInString(event.EventMessage))
 	p.mu.Unlock()
 
-	if flags&witness.PrintTime != 0 {
+	if flags&witness.PrintTime != witness.PrintNone {
 		dst = event.EventDate.AppendFormat(dst, "2006-01-02T15:04:05.000000000Z07:00")
 		dst = append(dst, ' ')
 	}
@@ -63,12 +63,12 @@ func (p *Pretty) Append(dst []byte, event witness.Event, flags witness.PrintFlag
 		dst = append(dst, eventMessageSpace...)
 		dst = append(dst, ' ')
 	}
-	if flags&witness.PrintCaller != 0 {
+	if flags&witness.PrintCaller != witness.PrintNone {
 		dst = append(dst, event.EventCaller...)
 		dst = append(dst, eventCallerSpace...)
 		dst = append(dst, ' ')
 	}
-	if flags&witness.PrintEventID != 0 {
+	if flags&witness.PrintEventID != witness.PrintNone {
 		dst = base64.StdEncoding.AppendEncode(dst, event.EventID.Bytes())
 		dst = append(dst, ' ')
 	}
@@ -82,7 +82,7 @@ func (p *Pretty) Append(dst []byte, event witness.Event, flags witness.PrintFlag
 		}
 		dst = append(dst, ' ')
 	}
-	if flags&witness.PrintSpanIDs != 0 {
+	if flags&witness.PrintSpanIDs != witness.PrintNone {
 		dst = append(dst, '[')
 		for i, sid := range event.SpanIDs {
 			if i != 0 {
@@ -92,7 +92,7 @@ func (p *Pretty) Append(dst []byte, event witness.Event, flags witness.PrintFlag
 		}
 		dst = append(dst, ']')
 	}
-	if flags&witness.PrintRecords != 0 {
+	if flags&witness.PrintRecords != witness.PrintNone {
 		for _, r := range event.Records {
 			dst = append(dst, "\n\t"...)
 			dst = r.AppendKey(dst)
@@ -101,10 +101,10 @@ func (p *Pretty) Append(dst []byte, event witness.Event, flags witness.PrintFlag
 			dst = append(dst, "\""...)
 		}
 	}
-	if flags&witness.PrintCR != 0 {
+	if flags&witness.PrintCR != witness.PrintNone {
 		dst = append(dst, '\r')
 	}
-	if flags&witness.PrintLF != 0 {
+	if flags&witness.PrintLF != witness.PrintNone {
 		dst = append(dst, '\n')
 	}
 	return dst

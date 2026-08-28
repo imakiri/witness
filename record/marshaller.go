@@ -6,24 +6,29 @@ import (
 	"reflect"
 )
 
-type Formatter interface {
+// Formatter
+//
+// Deprecated: use KeyJoiner
+type Formatter = KeyJoiner
+
+type KeyJoiner interface {
 	Structure(path, key string) string
 	Map(path string, key reflect.Value) string
 	Array(path string, key int) string
 	Slice(path string, key int) string
 }
 
-type Marshaller[F Formatter] struct {
+type Marshaller[KJ KeyJoiner] struct {
 	MaxDepth       uint64
-	KeyFormatter   F
+	KeyJoiner      KJ
 	PreferStringer bool
 }
 
-func (m Marshaller[F]) Marshal(key string, value any, prefix ...witness.Record) []witness.Record {
+func (m Marshaller[KJ]) Marshal(key string, value any, prefix ...witness.Record) []witness.Record {
 	return append(prefix, m.marshal(key, 0, reflect.ValueOf(value), nil)...)
 }
 
-func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, records []witness.Record) []witness.Record {
+func (m Marshaller[KJ]) marshal(key string, depth uint64, v reflect.Value, records []witness.Record) []witness.Record {
 	if depth >= m.MaxDepth {
 		return records
 	} else {
@@ -56,14 +61,14 @@ func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, record
 			return append(records, String(key, "{}"))
 		}
 		for i := 0; i < v.NumField(); i++ {
-			var fieldKey = m.KeyFormatter.Structure(key, v.Type().Field(i).Name)
+			var fieldKey = m.KeyJoiner.Structure(key, v.Type().Field(i).Name)
 			records = m.marshal(fieldKey, depth, v.Field(i), records)
 		}
 		return records
 	case reflect.Map:
 		var iter = v.MapRange()
 		for iter.Next() {
-			records = m.marshal(m.KeyFormatter.Map(key, iter.Key()), depth, iter.Value(), records)
+			records = m.marshal(m.KeyJoiner.Map(key, iter.Key()), depth, iter.Value(), records)
 		}
 		return records
 	case reflect.Array:
@@ -71,7 +76,7 @@ func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, record
 			return append(records, Bytes(key, v.Bytes()))
 		}
 		for i := 0; i < v.Len(); i++ {
-			records = m.marshal(m.KeyFormatter.Array(key, i), depth, v.Index(i), records)
+			records = m.marshal(m.KeyJoiner.Array(key, i), depth, v.Index(i), records)
 		}
 		return records
 	case reflect.Slice:
@@ -79,7 +84,7 @@ func (m Marshaller[F]) marshal(key string, depth uint64, v reflect.Value, record
 			return append(records, Bytes(key, v.Bytes()))
 		}
 		for i := 0; i < v.Len(); i++ {
-			records = m.marshal(m.KeyFormatter.Slice(key, i), depth, v.Index(i), records)
+			records = m.marshal(m.KeyJoiner.Slice(key, i), depth, v.Index(i), records)
 		}
 		return records
 	default:

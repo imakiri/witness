@@ -31,12 +31,12 @@ func (j *JSON) encode(e *jx.Encoder, event witness.Event, flags witness.PrintFla
 				e.Base64(event.TraceID.Bytes())
 			})
 		}
-		if flags&witness.PrintEventID != 0 {
+		if flags&witness.PrintEventID != witness.PrintNone {
 			e.Field("event_id", func(e *jx.Encoder) {
 				e.Base64(event.EventID.Bytes())
 			})
 		}
-		if flags&witness.PrintTime != 0 {
+		if flags&witness.PrintTime != witness.PrintNone {
 			e.Field("event_date", func(e *jx.Encoder) {
 				e.ByteStr(event.EventDate.AppendFormat(make([]byte, 0, 36), time.RFC3339Nano))
 			})
@@ -47,12 +47,12 @@ func (j *JSON) encode(e *jx.Encoder, event witness.Event, flags witness.PrintFla
 		e.Field("event_message", func(e *jx.Encoder) {
 			e.Str(event.EventMessage)
 		})
-		if flags&witness.PrintCaller != 0 {
+		if flags&witness.PrintCaller != witness.PrintNone {
 			e.Field("event_caller", func(e *jx.Encoder) {
 				e.Str(event.EventCaller)
 			})
 		}
-		if flags&witness.PrintSpanIDs != 0 {
+		if flags&witness.PrintSpanIDs != witness.PrintNone {
 			e.Field("event_span_ids", func(e *jx.Encoder) {
 				e.Arr(func(e *jx.Encoder) {
 					for _, sid := range event.SpanIDs {
@@ -61,7 +61,7 @@ func (j *JSON) encode(e *jx.Encoder, event witness.Event, flags witness.PrintFla
 				})
 			})
 		}
-		if flags&witness.PrintRecords != 0 {
+		if flags&witness.PrintRecords != witness.PrintNone {
 			e.Field("event_records", func(e *jx.Encoder) {
 				e.Arr(func(e *jx.Encoder) {
 					for _, r := range event.Records {
@@ -80,10 +80,10 @@ func (j *JSON) encode(e *jx.Encoder, event witness.Event, flags witness.PrintFla
 	})
 
 	b := e.Bytes()
-	if flags&witness.PrintCR != 0 {
+	if flags&witness.PrintCR != witness.PrintNone {
 		b = append(b, '\r')
 	}
-	if flags&witness.PrintLF != 0 {
+	if flags&witness.PrintLF != witness.PrintNone {
 		b = append(b, '\n')
 	}
 	e.SetBytes(b)
