@@ -48,6 +48,7 @@ func NewObserver(options ...Option) *Observer {
 
 	o.printer = record.NewPrinter(append([]record.PrinterOption{
 		record.PrinterWithMaxEventTypeLength(witness.CalcMaxEventValueLength(o.types)),
+		//record.PrinterWithPrintLF(false),
 	}, o.printerOptions...)...)
 
 	return o

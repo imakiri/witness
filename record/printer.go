@@ -11,6 +11,17 @@ import (
 	"unicode/utf8"
 )
 
+type PrintFormat uint64
+
+const (
+	PrintTime PrintFormat = 1 << iota
+	PrintEventID
+	PrintCaller
+	PrintSpanIDs
+	PrintRecords
+	PrintLF
+)
+
 type Printer struct {
 	bufPool               *sync.Pool
 	mu                    *sync.Mutex
@@ -18,14 +29,14 @@ type Printer struct {
 	maxEventTypeLength    int
 	maxEventCallerLength  int
 	formatter             Formatter
-	printCaller           bool
+	printFormat           PrintFormat
 }
 
 type PrinterOption func(printer *Printer)
 
-func PrinterWithPrintCaller(value bool) PrinterOption {
+func PrinterWithPrintFormat(value PrintFormat) PrinterOption {
 	return func(printer *Printer) {
-		printer.printCaller = value
+		printer.printFormat = value
 	}
 }
 
@@ -51,7 +62,7 @@ func NewPrinter(options ...PrinterOption) *Printer {
 		mu:                 new(sync.Mutex),
 		maxEventTypeLength: witness.CalcMaxEventValueLength(witness.Events()),
 		formatter:          DefaultFormatter{},
-		printCaller:        true,
+		printFormat:        ^PrintFormat(0),
 	}
 	for _, opt := range options {
 		opt(p)
@@ -73,44 +84,60 @@ func (p *Printer) Append(dst []byte, event witness.Event) []byte {
 	var eventMessageSpace = strings.Repeat(" ", p.maxEventMessageLength-utf8.RuneCountInString(event.EventMessage))
 	p.mu.Unlock()
 
-	dst = append(dst, '\n')
-	dst = p.appendTime(dst, event.EventDate)
-	dst = append(dst, ' ')
-	// trace_id is fixed-width (22 chars base64) or 22 spaces when absent —
-	// keeps columns aligned so grep / awk pipelines stay simple.
-	if event.TraceID != uuid.Nil {
-		dst = base64.StdEncoding.AppendEncode(dst, event.TraceID.Bytes())
-	} else {
-		dst = append(dst, strings.Repeat(" ", 22)...)
+	if p.printFormat&PrintTime != 0 {
+		dst = p.appendTime(dst, event.EventDate)
+		dst = append(dst, ' ')
 	}
-	dst = append(dst, ' ')
-	dst = base64.StdEncoding.AppendEncode(dst, event.EventID.Bytes())
-	dst = append(dst, ' ')
-	if p.printCaller {
+	{
+		dst = event.EventType.Append(dst)
+		dst = append(dst, eventTypeSpace...)
+		dst = append(dst, ' ')
+	}
+	{
+		dst = append(dst, event.EventMessage...)
+		dst = append(dst, eventMessageSpace...)
+		dst = append(dst, ' ')
+	}
+	if p.printFormat&PrintCaller != 0 {
 		dst = append(dst, event.EventCaller...)
 		dst = append(dst, eventCallerSpace...)
 		dst = append(dst, ' ')
 	}
-	dst = event.EventType.Append(dst)
-	dst = append(dst, eventTypeSpace...)
-	dst = append(dst, ' ')
-	dst = append(dst, event.EventMessage...)
-	dst = append(dst, eventMessageSpace...)
-	dst = append(dst, ' ')
-	dst = append(dst, '[')
-	for i, sid := range event.SpanIDs {
-		if i != 0 {
-			dst = append(dst, ' ')
-		}
-		dst = base64.StdEncoding.AppendEncode(dst, sid.Bytes())
+	if p.printFormat&PrintEventID != 0 {
+		dst = base64.StdEncoding.AppendEncode(dst, event.EventID.Bytes())
+		dst = append(dst, ' ')
 	}
-	dst = append(dst, ']')
-	for _, r := range event.Records {
-		dst = append(dst, "\n\t"...)
-		dst = r.AppendKey(dst)
-		dst = append(dst, ": \""...)
-		dst = r.AppendValue(dst)
-		dst = append(dst, "\""...)
+	{
+		// trace_id is fixed-width (22 chars base64) or 22 spaces when absent —
+		// keeps columns aligned so grep / awk pipelines stay simple.
+		if event.TraceID != uuid.Nil {
+			dst = base64.StdEncoding.AppendEncode(dst, event.TraceID.Bytes())
+		} else {
+			dst = append(dst, strings.Repeat(" ", 22)...)
+		}
+		dst = append(dst, ' ')
+	}
+	if p.printFormat&PrintSpanIDs != 0 {
+		dst = append(dst, '[')
+		for i, sid := range event.SpanIDs {
+			if i != 0 {
+				dst = append(dst, ' ')
+			}
+			dst = base64.StdEncoding.AppendEncode(dst, sid.Bytes())
+		}
+		dst = append(dst, ']')
+	}
+	if p.printFormat&PrintRecords != 0 {
+		for _, r := range event.Records {
+			dst = append(dst, "\n\t"...)
+			dst = r.AppendKey(dst)
+			dst = append(dst, ": \""...)
+			dst = r.AppendValue(dst)
+			dst = append(dst, "\""...)
+		}
+	}
+	if p.printFormat&PrintLF != 0 {
+		dst = append(dst, '\n')
 	}
 	return dst
 }
