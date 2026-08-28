@@ -1,9 +1,9 @@
 package test_test
 
 import (
-	"github.com/imakiri/printers"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/observers/test"
+	"github.com/imakiri/witness/printers"
 	"github.com/imakiri/witness/record"
 	"github.com/stretchr/testify/require"
 	"testing"

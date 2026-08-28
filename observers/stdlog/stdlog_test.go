@@ -3,9 +3,9 @@ package stdlog_test
 import (
 	"context"
 	"fmt"
-	"github.com/imakiri/printers"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/observers/stdlog"
+	"github.com/imakiri/witness/printers"
 	"github.com/imakiri/witness/record"
 	"github.com/stretchr/testify/require"
 	"testing"
