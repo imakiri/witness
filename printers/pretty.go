@@ -1,80 +1,45 @@
-package record
+package printers
 
 import (
 	"encoding/base64"
+	"fmt"
 	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"io"
 	"strings"
 	"sync"
-	"time"
 	"unicode/utf8"
 )
 
-type PrintFormat uint64
-
-const (
-	PrintTime PrintFormat = 1 << iota
-	PrintEventID
-	PrintCaller
-	PrintSpanIDs
-	PrintRecords
-	PrintLF
-)
-
-type Printer struct {
+type Pretty struct {
 	bufPool               *sync.Pool
 	mu                    *sync.Mutex
 	maxEventMessageLength int
 	maxEventTypeLength    int
 	maxEventCallerLength  int
-	formatter             Formatter
-	printFormat           PrintFormat
 }
 
-type PrinterOption func(printer *Printer)
+type PrettyOption func(printer *Pretty) error
 
-func PrinterWithPrintFormat(value PrintFormat) PrinterOption {
-	return func(printer *Printer) {
-		printer.printFormat = value
-	}
-}
-
-func PrinterWithMaxEventTypeLength(length int) PrinterOption {
-	return func(printer *Printer) {
-		printer.maxEventTypeLength = length
-	}
-}
-
-func PrinterWithFormatter(formatter Formatter) PrinterOption {
-	return func(printer *Printer) {
-		printer.formatter = formatter
-	}
-}
-
-func NewPrinter(options ...PrinterOption) *Printer {
+func NewPretty(options ...PrettyOption) (*Pretty, error) {
 	var bufPool = new(sync.Pool)
 	bufPool.New = func() any {
 		return make([]byte, 0, 256)
 	}
-	var p = &Printer{
+	var p = &Pretty{
 		bufPool:            bufPool,
 		mu:                 new(sync.Mutex),
 		maxEventTypeLength: witness.CalcMaxEventValueLength(witness.Events()),
-		formatter:          DefaultFormatter{},
-		printFormat:        ^PrintFormat(0),
 	}
-	for _, opt := range options {
-		opt(p)
+	for i, option := range options {
+		if err := option(p); err != nil {
+			return nil, fmt.Errorf("failed at option %d: %w", i, err)
+		}
 	}
-	return p
+	return p, nil
 }
 
-func (p *Printer) appendTime(b []byte, t time.Time) []byte {
-	return t.AppendFormat(b, "2006-01-02T15:04:05.000000000Z07:00")
-}
-
-func (p *Printer) Append(dst []byte, event witness.Event) []byte {
+func (p *Pretty) Append(dst []byte, event witness.Event, flags witness.PrintFlags) []byte {
 	p.mu.Lock()
 	p.maxEventCallerLength = max(p.maxEventCallerLength, utf8.RuneCountInString(event.EventCaller))
 	p.maxEventMessageLength = max(p.maxEventMessageLength, utf8.RuneCountInString(event.EventMessage))
@@ -84,8 +49,8 @@ func (p *Printer) Append(dst []byte, event witness.Event) []byte {
 	var eventMessageSpace = strings.Repeat(" ", p.maxEventMessageLength-utf8.RuneCountInString(event.EventMessage))
 	p.mu.Unlock()
 
-	if p.printFormat&PrintTime != 0 {
-		dst = p.appendTime(dst, event.EventDate)
+	if flags&witness.PrintTime != 0 {
+		dst = event.EventDate.AppendFormat(dst, "2006-01-02T15:04:05.000000000Z07:00")
 		dst = append(dst, ' ')
 	}
 	{
@@ -98,12 +63,12 @@ func (p *Printer) Append(dst []byte, event witness.Event) []byte {
 		dst = append(dst, eventMessageSpace...)
 		dst = append(dst, ' ')
 	}
-	if p.printFormat&PrintCaller != 0 {
+	if flags&witness.PrintCaller != 0 {
 		dst = append(dst, event.EventCaller...)
 		dst = append(dst, eventCallerSpace...)
 		dst = append(dst, ' ')
 	}
-	if p.printFormat&PrintEventID != 0 {
+	if flags&witness.PrintEventID != 0 {
 		dst = base64.StdEncoding.AppendEncode(dst, event.EventID.Bytes())
 		dst = append(dst, ' ')
 	}
@@ -117,7 +82,7 @@ func (p *Printer) Append(dst []byte, event witness.Event) []byte {
 		}
 		dst = append(dst, ' ')
 	}
-	if p.printFormat&PrintSpanIDs != 0 {
+	if flags&witness.PrintSpanIDs != 0 {
 		dst = append(dst, '[')
 		for i, sid := range event.SpanIDs {
 			if i != 0 {
@@ -127,7 +92,7 @@ func (p *Printer) Append(dst []byte, event witness.Event) []byte {
 		}
 		dst = append(dst, ']')
 	}
-	if p.printFormat&PrintRecords != 0 {
+	if flags&witness.PrintRecords != 0 {
 		for _, r := range event.Records {
 			dst = append(dst, "\n\t"...)
 			dst = r.AppendKey(dst)
@@ -136,16 +101,20 @@ func (p *Printer) Append(dst []byte, event witness.Event) []byte {
 			dst = append(dst, "\""...)
 		}
 	}
-	if p.printFormat&PrintLF != 0 {
+	if flags&witness.PrintCR != 0 {
+		dst = append(dst, '\r')
+	}
+	if flags&witness.PrintLF != 0 {
 		dst = append(dst, '\n')
 	}
 	return dst
 }
 
-func (p *Printer) Print(writer io.Writer, event witness.Event) {
+func (p *Pretty) Print(writer io.Writer, event witness.Event, flags witness.PrintFlags) {
 	var buf = p.bufPool.Get().([]byte)
 	buf = buf[0:0]
-	buf = p.Append(buf, event)
+	buf = p.Append(buf, event, flags)
 	_, _ = writer.Write(buf)
+	clear(buf)
 	p.bufPool.Put(buf)
 }

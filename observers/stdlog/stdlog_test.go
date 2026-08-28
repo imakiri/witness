@@ -1,10 +1,13 @@
-package stdlog
+package stdlog_test
 
 import (
 	"context"
 	"fmt"
+	"github.com/imakiri/printers"
 	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/observers/stdlog"
 	"github.com/imakiri/witness/record"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
@@ -18,7 +21,12 @@ func foo(ctx context.Context, i int, s string) (re string) {
 }
 
 func TestSpan(t *testing.T) {
-	var observer = NewObserver()
+	printer, err := printers.NewPretty()
+	require.NoError(t, err)
+
+	observer, err := stdlog.NewObserver(printer)
+	require.NoError(t, err)
+
 	var ctx, finish = witness.Instance(context.Background(), observer, "test_span", "1")
 	defer finish()
 

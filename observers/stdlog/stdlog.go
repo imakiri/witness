@@ -1,69 +1,72 @@
 package stdlog
 
 import (
+	"fmt"
 	"github.com/imakiri/witness"
-	"github.com/imakiri/witness/record"
+	"io"
 	"os"
 	"slices"
-	"time"
 )
 
 type Observer struct {
-	useStdErr      bool
-	types          []witness.EventType
-	printerOptions []record.PrinterOption
-	printer        *record.Printer
+	useStdErr bool
+	types     []witness.EventType
+	flags     witness.PrintFlags
+	printer   witness.Printer
 }
 
-type Option func(o *Observer)
+type Option func(o *Observer) error
 
 func WithTypes(types []witness.EventType) Option {
-	return func(o *Observer) {
+	return func(o *Observer) error {
 		o.types = types
+		return nil
 	}
 }
 
 func WithUsingStdErr() Option {
-	return func(o *Observer) {
+	return func(o *Observer) error {
 		o.useStdErr = true
+		return nil
 	}
 }
 
-func WithPrinterOptions(options ...record.PrinterOption) Option {
-	return func(o *Observer) {
-		o.printerOptions = options
+func WithFlags(flags ...witness.PrintFlags) Option {
+	return func(o *Observer) error {
+		o.flags = 0
+		for _, f := range flags {
+			o.flags |= f
+		}
+		return nil
 	}
 }
 
-func NewObserver(options ...Option) *Observer {
-	var o = new(Observer)
-	for _, opt := range options {
-		opt(o)
+func NewObserver(printer witness.Printer, options ...Option) (*Observer, error) {
+	var o = &Observer{
+		printer: printer,
+		flags:   ^witness.PrintFlags(0),
+	}
+
+	for i, option := range options {
+		if err := option(o); err != nil {
+			return nil, fmt.Errorf("failed at option %d: %w", i, err)
+		}
 	}
 
 	if o.types == nil {
 		o.types = witness.Events()
 	}
 	slices.SortFunc(o.types, witness.EventTypesCompare)
-
-	o.printer = record.NewPrinter(append([]record.PrinterOption{
-		record.PrinterWithMaxEventTypeLength(witness.CalcMaxEventValueLength(o.types)),
-		//record.PrinterWithPrintLF(false),
-	}, o.printerOptions...)...)
-
-	return o
-}
-
-func (o *Observer) appendTime(b []byte, t time.Time) []byte {
-	return t.AppendFormat(b, "2006-01-02T15:04:05.000000000Z07:00")
+	return o, nil
 }
 
 func (o *Observer) Observe(event witness.Event) {
 	if _, found := slices.BinarySearchFunc(o.types, event.EventType, witness.EventTypesCompare); !found {
 		return
 	}
-	if event.EventType.IsError() && o.useStdErr {
-		o.printer.Print(os.Stderr, event)
+	var w io.Writer = os.Stdout
+	if o.useStdErr && event.EventType.IsError() {
+		w = io.MultiWriter(os.Stdout, os.Stderr)
 	}
-	o.printer.Print(os.Stdout, event)
+	o.printer.Print(w, event, o.flags)
 }

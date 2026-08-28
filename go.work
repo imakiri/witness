@@ -11,6 +11,7 @@ use (
 	./observers/stdlog
 	./observers/tee
 	./observers/test
+	./printers
 	./record
 )
 

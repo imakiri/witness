@@ -3,14 +3,19 @@ package test
 import (
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/record"
-	"testing"
 )
 
+type T interface {
+	Fail()
+	Helper()
+	Logf(format string, args ...any)
+}
+
 type Observer struct {
-	t              *testing.T
+	t              T
 	foe            bool
-	printerOptions []record.PrinterOption
-	printer        *record.Printer
+	printerOptions []record.PrettyOption
+	printer        *record.Pretty
 }
 
 type Option func(o *Observer)
@@ -21,26 +26,26 @@ func WithFailOnError() Option {
 	}
 }
 
-func WithPrinterOptions(options ...record.PrinterOption) Option {
+func WithPrinterOptions(options ...record.PrettyOption) Option {
 	return func(o *Observer) {
 		o.printerOptions = options
 	}
 }
 
-func NewObserver(t *testing.T, options ...Option) *Observer {
+func NewObserver(t T, options ...Option) *Observer {
 	var o = new(Observer)
 	for _, option := range options {
 		option(o)
 	}
 	o.t = t
-	o.printer = record.NewPrinter(o.printerOptions...)
+	o.printer = record.NewPretty(o.printerOptions...)
 	return o
 }
 
 func (o *Observer) Observe(event witness.Event) {
 	o.t.Helper()
-	if event.EventType.IsError() && o.foe {
-		o.t.Errorf("%s", o.printer.Append(nil, event))
-	}
 	o.t.Logf("%s", o.printer.Append(nil, event))
+	if event.EventType.IsError() && o.foe {
+		o.t.Fail()
+	}
 }
