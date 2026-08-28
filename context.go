@@ -27,7 +27,7 @@ import (
 // observers can group / filter / colour by service without reconstructing
 // the span chain at query time. Inherited unchanged by every child Context.
 type Context struct {
-	t        *testing.T
+	t           *testing.T
 	observer    Observer
 	spanIDs     []uuid.UUID
 	traceID     uuid.UUID
@@ -142,28 +142,28 @@ func (c Context) Info(msg string, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), msg, caller(1, 0), records...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), msg, caller(1), records...)
 }
 
 func (c Context) Warn(msg string, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogWarn(), msg, caller(1, 0), records...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogWarn(), msg, caller(1), records...)
 }
 
 func (c Context) Debug(msg string, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogDebug(), msg, caller(1, 0), records...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogDebug(), msg, caller(1), records...)
 }
 
 func (c Context) Error(msg string, err error, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1), appendError(records, err)...)
 }
 
 type Finish func(records ...Record)

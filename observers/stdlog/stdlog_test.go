@@ -18,13 +18,14 @@ func foo(ctx context.Context, i int, s string) (re string) {
 }
 
 func TestSpan(t *testing.T) {
-	witness.EnableDebug()
 	var observer = NewObserver()
 	var ctx, finish = witness.Instance(context.Background(), observer, "test_span", "1")
 	defer finish()
 
 	ctx, finish2 := witness.Span(ctx, "testSpan")
-	defer finish2()
+	defer func() {
+		finish2()
+	}()
 
 	var _ = foo(ctx, 10, "test string")
 }

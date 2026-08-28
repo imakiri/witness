@@ -20,6 +20,18 @@ func (c *captureObserver) Observe(event Event) {
 	c.events = append(c.events, event)
 }
 
+func (c *captureObserver) reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.events = nil
+}
+
+func (c *captureObserver) last() Event {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.events[len(c.events)-1]
+}
+
 func (c *captureObserver) all() []Event {
 	c.mu.Lock()
 	defer c.mu.Unlock()

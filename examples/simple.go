@@ -11,7 +11,6 @@ import (
 )
 
 func main() {
-	witness.EnableDebug()
 
 	// create observer instance
 	var observer witness.Observer = stdlog.NewObserver()
