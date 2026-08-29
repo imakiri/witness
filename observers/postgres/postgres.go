@@ -137,8 +137,12 @@ func (o *Observer) Close() {
 		close(o.done)
 		// Cap the total drain wall-time. Workers' in-flight SendBatch calls
 		// share shutdownCtx as their parent, so canceling it aborts them too.
-		time.AfterFunc(o.config.ShutdownTimeout, o.shutdownCancel)
+		// Stop the timer once the workers are done: an unstopped AfterFunc
+		// keeps a runtime timer and its closure alive for the whole
+		// ShutdownTimeout after a Close that drained promptly.
+		timer := time.AfterFunc(o.config.ShutdownTimeout, o.shutdownCancel)
 		o.wg.Wait()
+		timer.Stop()
 		o.shutdownCancel()
 		o.connection.Close()
 	})
@@ -155,9 +159,22 @@ func (o *Observer) Dropped() uint64 {
 // (incrementing Dropped) when the channel is full or the Observer has been
 // closed. Safe to call from any goroutine.
 func (o *Observer) Observe(event witness.Event) {
+	// Two selects, not one: a single select with <-o.done, the send and a
+	// default picks *randomly* among the ready cases, so a closed Observer
+	// with buffer to spare still enqueued roughly half of what it was given.
+	// Checking done on its own makes the shutdown decision deterministic.
 	select {
 	case <-o.done:
+		o.dropped.Add(1)
 		return
+	default:
+	}
+
+	// A Close landing between the two selects still enqueues one event, which
+	// drain may or may not reach. Closing that window needs a lock on the hot
+	// path, and the event is lost either way — only the Dropped count is
+	// approximate, and only for events racing Close.
+	select {
 	case o.observeCh <- event:
 	default:
 		o.dropped.Add(1)

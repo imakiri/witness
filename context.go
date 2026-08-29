@@ -111,6 +111,7 @@ func (c Context) Join(cts ...Context) Context {
 		return bytes.Compare(a[:], b[:])
 	})
 	return Context{
+		t:           c.t,
 		observer:    c.observer,
 		spanIDs:     slices.Clone(slices.Compact(spanIDs)),
 		traceID:     c.traceID,
@@ -168,10 +169,16 @@ func (c Context) Error(msg string, err error, records ...Record) {
 
 type Finish func(records ...Record)
 
-const keyContext = "witness.context:3D3DNvuPg4yxitoS0wG8Q0FpI0AeY9BQ"
+// keyContext is a unique type to prevent assignment: nothing outside this
+// package can construct the key, so nothing outside this package can
+// overwrite the witness Context on a ctx. It used to be a string constant —
+// reproducible by anyone who read it, and a foreign value stored under it
+// would fail the type assertion in From and silently downgrade the subtree
+// to NilObserver.
+type keyContext struct{}
 
 func With(ctx context.Context, c Context) context.Context {
-	return context.WithValue(ctx, keyContext, c)
+	return context.WithValue(ctx, keyContext{}, c)
 }
 
 func (c Context) To(ctx context.Context) context.Context {
@@ -179,7 +186,7 @@ func (c Context) To(ctx context.Context) context.Context {
 }
 
 func From(ctx context.Context) Context {
-	cs, ok := ctx.Value(keyContext).(Context)
+	cs, ok := ctx.Value(keyContext{}).(Context)
 	if ok {
 		return cs
 	}

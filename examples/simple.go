@@ -5,6 +5,7 @@ import (
 	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/observers/stdlog"
+	"github.com/imakiri/witness/printers"
 	"github.com/imakiri/witness/record"
 	"log"
 	"net/http"
@@ -13,7 +14,14 @@ import (
 func main() {
 
 	// create observer instance
-	var observer witness.Observer = stdlog.NewObserver()
+	printer, err := printers.NewPretty()
+	if err != nil {
+		log.Fatalln("printers.NewPretty failed with error:", err)
+	}
+	observer, err := stdlog.NewObserver(printer)
+	if err != nil {
+		log.Fatalln("stdlog.NewObserver failed with error:", err)
+	}
 	// create root span
 	var ctx, finish = witness.Instance(context.Background(), observer, "example.simple", "1")
 	defer finish()
@@ -27,7 +35,7 @@ func main() {
 	var client = new(http.Client)
 
 	var msgID = uuid.Must(uuid.NewV7())
-	var request, err = http.NewRequest(http.MethodGet, "https://google.com", nil)
+	request, err := http.NewRequest(http.MethodGet, "https://google.com", nil)
 	if err != nil {
 		log.Fatalln("http.NewRequest failed with error:", err)
 	}
@@ -62,6 +70,9 @@ func Foo(ctx context.Context, i int) (j int) {
 
 func Bar(ctx context.Context, i int) (j int) {
 	ctx, finish := witness.Span(ctx, "Bar", record.Int("i", i))
-	defer finish(record.Int("j", j))
+	// The records must be built inside a closure: a deferred call evaluates
+	// its arguments at the `defer` statement, so `record.Int("j", j)` written
+	// directly here would always report j = 0.
+	defer func() { finish(record.Int("j", j)) }()
 	return i * i
 }

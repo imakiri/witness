@@ -40,9 +40,3 @@ func (r *registry) Set(id uuid.UUID, span trace.Span) {
 func (r *registry) Delete(id uuid.UUID) {
 	r.m.Delete(id)
 }
-
-func (r *registry) Range(fn func(id uuid.UUID, span trace.Span) bool) {
-	r.m.Range(func(k, v any) bool {
-		return fn(k.(uuid.UUID), v.(trace.Span))
-	})
-}

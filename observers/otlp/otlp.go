@@ -14,29 +14,32 @@ package otlp
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const TracerName = "github.com/imakiri/witness"
 
 type Config struct {
 	Provider *sdktrace.TracerProvider
-	// SpanTTL force-ends spans that never received a finish event. Zero disables.
-	SpanTTL time.Duration
 }
 
+// Observer holds one live otel trace.Span per open witness span, in reg.
+// A span whose finish event never arrives (process killed mid-span, an
+// observer dropped the finish, a Finish closure never called) stays in reg
+// for the lifetime of the Observer — witness has no span timeout, and
+// force-ending a span would invent a duration the data model does not have.
+// If a service leaks spans faster than it closes them, that is a bug in the
+// service, and reg growing is how you see it.
 type Observer struct {
 	tracer   trace.Tracer
 	provider *sdktrace.TracerProvider
 	reg      *registry
-	ttl      time.Duration
 }
 
 func NewObserver(cfg Config) (*Observer, error) {
@@ -47,7 +50,6 @@ func NewObserver(cfg Config) (*Observer, error) {
 		tracer:   cfg.Provider.Tracer(TracerName),
 		provider: cfg.Provider,
 		reg:      &registry{},
-		ttl:      cfg.SpanTTL,
 	}, nil
 }
 

@@ -39,7 +39,9 @@ func (m Marshaller[KJ]) marshal(key string, depth uint64, v reflect.Value, recor
 		return append(records, Stringer(key, v))
 	}
 
-	if m.PreferStringer && v.Type().Implements(reflect.TypeFor[fmt.Stringer]()) {
+	// CanInterface is false for values read out of unexported struct fields;
+	// v.Interface() would panic on them.
+	if m.PreferStringer && v.CanInterface() && v.Type().Implements(reflect.TypeFor[fmt.Stringer]()) {
 		return append(records, Stringer(key, (v.Interface()).(fmt.Stringer)))
 	}
 
@@ -72,16 +74,16 @@ func (m Marshaller[KJ]) marshal(key string, depth uint64, v reflect.Value, recor
 		}
 		return records
 	case reflect.Array:
-		if reflect.TypeOf([]byte(nil)) == v.Type() {
-			return append(records, Bytes(key, v.Bytes()))
+		if b, ok := byteSequence(v); ok {
+			return append(records, Bytes(key, b))
 		}
 		for i := 0; i < v.Len(); i++ {
 			records = m.marshal(m.KeyJoiner.Array(key, i), depth, v.Index(i), records)
 		}
 		return records
 	case reflect.Slice:
-		if reflect.TypeOf([]byte(nil)) == v.Type() {
-			return append(records, Bytes(key, v.Bytes()))
+		if b, ok := byteSequence(v); ok {
+			return append(records, Bytes(key, b))
 		}
 		for i := 0; i < v.Len(); i++ {
 			records = m.marshal(m.KeyJoiner.Slice(key, i), depth, v.Index(i), records)
@@ -90,4 +92,30 @@ func (m Marshaller[KJ]) marshal(key string, depth uint64, v reflect.Value, recor
 	default:
 		return records
 	}
+}
+
+// byteSequence reports whether v is a slice or array of bytes and returns its
+// contents, so that []byte renders as one base64 record instead of one record
+// per element.
+//
+// The test is on the element's *kind*, not on the type: comparing v.Type()
+// against []byte missed every named type (`type Payload []byte`), and on the
+// array branch it could never be true at all — an array type is never equal
+// to a slice type, so that branch was dead.
+//
+// Arrays are copied out element by element. A value reached through
+// reflect.ValueOf is not addressable, and v.Bytes() panics on an
+// unaddressable byte array.
+func byteSequence(v reflect.Value) ([]byte, bool) {
+	if v.Type().Elem().Kind() != reflect.Uint8 {
+		return nil, false
+	}
+	if v.Kind() == reflect.Slice {
+		return v.Bytes(), true
+	}
+	var b = make([]byte, v.Len())
+	for i := range b {
+		b[i] = byte(v.Index(i).Uint())
+	}
+	return b, true
 }

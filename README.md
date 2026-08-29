@@ -2,25 +2,22 @@
 
 #### _Better than OTEL_
 
-Upgrading from v0.x: see [`MIGRATION.md`](./MIGRATION.md).
+See [`MIGRATION.md`](./MIGRATION.md) for breaking changes between versions.
 
 ## Install
 
-Pick whichever fits:
+Witness is pre-1.0. The root module carries the API; every observer and
+adapter is a separate module, so you pull only the dependencies you import.
 
 ```sh
-# everything — root + all observers + adapters, one require line
-go get github.com/imakiri/witness/all@v1.0.0-dev
+go get github.com/imakiri/witness@v0.30.0
+go get github.com/imakiri/witness/record@v0.20.0
 
-# selective — pull only the pieces you need
-go get github.com/imakiri/witness@v1.0.0-dev
-go get github.com/imakiri/witness/observers/stdlog@v1.0.0-dev
-go get github.com/imakiri/witness/observers/otlp@v1.0.0-dev
+# whichever observers you actually use
+go get github.com/imakiri/witness/printers@v0.1.0
+go get github.com/imakiri/witness/observers/stdlog@v0.23.0
+go get github.com/imakiri/witness/observers/otlp@v0.2.0
 ```
-
-In code, always import each package from its original path
-(`witness/observers/otlp`, etc.); `witness/all` is just a dependency
-aggregator, it does not re-export.
 
 It's a data model, an observability API and set of its implementations. It combines metrics, logs and traces into one
 data entity called event.
@@ -109,7 +106,7 @@ contain the shared span_id — nothing else is required to reconnect the trace a
 
 `observers/otlp` turns witness spans into OTel spans and ships them to any
 OTLP collector — Jaeger, Tempo, Grafana Cloud, etc. Combine with other
-observers via `tee`:
+observers via `multi`:
 
 ```go
 tp, _ := otlp.NewTraceProvider(ctx, otlp.ProviderConfig{
@@ -120,8 +117,11 @@ tp, _ := otlp.NewTraceProvider(ctx, otlp.ProviderConfig{
 otlpObs, _ := otlp.NewObserver(otlp.Config{Provider: tp})
 defer otlpObs.Shutdown(ctx)
 
+printer, _ := printers.NewPretty()
+stdObs, _ := stdlog.NewObserver(printer)
+
 ctx, finish := witness.Instance(ctx,
-    tee.NewObserver(stdlog.NewObserver(), otlpObs),
+    multi.NewObserver(stdObs, otlpObs),
     "my_service", "v1")
 defer finish()
 ```
@@ -129,7 +129,8 @@ defer finish()
 The trace_id is the first 16 bytes of the root witness span_id; the span_id
 is the last 8 bytes of the current one. Both are raw byte copies, so the
 same UUID appears in Jaeger and in the Postgres tables. For cross-process
-propagation use `otlp.Inject` / `otlp.Extract` over W3C `traceparent`.
+propagation use `propagation.Inject` / `propagation.Extract` over W3C
+`traceparent`, and feed the extracted values into `witness.InstanceContinue`.
 
 ## Notes
 

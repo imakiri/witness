@@ -38,9 +38,9 @@ func TestExtractMalformed(t *testing.T) {
 	cases := []string{
 		"garbage",
 		"00-not-hex-01",
-		"00-deadbeef-deadbeef-01",                                          // wrong lengths
-		"00-00000000000000000000000000000000-zzzzzzzzzzzzzzzz-01",           // bad hex in span
-		"01-00000000000000000000000000000001-0000000000000001",              // wrong field count
+		"00-deadbeef-deadbeef-01", // wrong lengths
+		"00-00000000000000000000000000000000-zzzzzzzzzzzzzzzz-01", // bad hex in span
+		"01-00000000000000000000000000000001-0000000000000001",    // wrong field count
 	}
 	for _, header := range cases {
 		t.Run(header, func(t *testing.T) {

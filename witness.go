@@ -170,6 +170,7 @@ func ErrorInternalF(ctx context.Context, msg string, err error, records ...Recor
 // the current request.
 func (c Context) withChildSpan(spanID uuid.UUID) Context {
 	return Context{
+		t:           c.t,
 		observer:    c.observer,
 		spanIDs:     append(slices.Clone(c.spanIDs), spanID),
 		traceID:     c.traceID,
@@ -189,13 +190,20 @@ func Trace(ctx context.Context, spanName string, records ...Record) (context.Con
 	parent := From(ctx)
 	newSpan := uuid.Must(uuid.NewV7())
 	nc := Context{
+		t:           parent.t,
 		observer:    parent.observer,
 		spanIDs:     append(slices.Clone(parent.spanIDs), newSpan),
 		traceID:     newSpan,
 		serviceName: parent.serviceName,
 	}
+	if nc.t != nil {
+		nc.t.Helper()
+	}
 	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, at, records...)
 	return nc.To(ctx), func(records ...Record) {
+		if nc.t != nil {
+			nc.t.Helper()
+		}
 		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, at, records...)
 	}
 }
@@ -305,6 +313,9 @@ func InstanceContinue(ctx context.Context, observer Observer, instanceName, inst
 		return instance(ctx, observer, instanceName, instanceVersion, at, records...)
 	}
 	c := Context{
+		// Instance overrides the trace state of any Context already on ctx,
+		// but t is test plumbing, not trace state — carry it through.
+		t:           From(ctx).t,
 		observer:    observer,
 		spanIDs:     []uuid.UUID{uuid.Must(uuid.NewV7())},
 		traceID:     parentTraceID,
@@ -345,6 +356,7 @@ func instance(ctx context.Context, observer Observer, instanceName, instanceVers
 	}
 	rootSpan := uuid.Must(uuid.NewV7())
 	c := Context{
+		t:           From(ctx).t,
 		observer:    observer,
 		spanIDs:     []uuid.UUID{rootSpan},
 		traceID:     rootSpan,

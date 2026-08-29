@@ -58,10 +58,15 @@ func Number(key string, value uint64) Record {
 	}
 }
 
+// Float renders with 'g' and precision -1: the shortest form that parses
+// back to the same float64, plain decimal in the readable range and an
+// exponent only where the alternative would be unreadable. Consumers that
+// parse the value back (the prometheus observer) use strconv.ParseFloat,
+// which accepts both forms.
 func Float(key string, value float64) Record {
 	return Record{
 		key:   key,
-		value: strconv.FormatFloat(value, 'e', -1, 64),
+		value: strconv.FormatFloat(value, 'g', -1, 64),
 	}
 }
 

@@ -1,6 +1,9 @@
 package witness
 
-import "unicode/utf8"
+import (
+	"fmt"
+	"unicode/utf8"
+)
 
 func CalcMaxEventValueLength(events []EventType) int {
 	var length int
@@ -30,14 +33,39 @@ func EventTypesCompare(a, b EventType) int {
 // MustNewEventType registers a user-defined event type. The range
 // (-1000, +1000) is reserved for built-in types declared in this package;
 // user code must use |i| >= 1000.
+//
+// The type is not an error type: use MustNewErrorEventType for that.
 func MustNewEventType(i int64, s string) EventType {
+	return mustNewEventType(false, i, s)
+}
+
+// MustNewErrorEventType is MustNewEventType for a type that reports a
+// failure. IsError returns true for it, which is what routes an event to
+// stdlog's error writer and what makes the test observer's WithFailOnError
+// fail the test — a custom type registered with MustNewEventType reaches
+// neither.
+func MustNewErrorEventType(i int64, s string) EventType {
+	return mustNewEventType(true, i, s)
+}
+
+func mustNewEventType(isError bool, i int64, s string) EventType {
 	if -1000 < i && i < 1000 {
 		panic("i values in range (-1000,+1000) are reserved for built-in event types")
 	}
 	if utf8.RuneCountInString(s) > 127 {
 		panic("s values cannot exceed 128 characters")
 	}
+	// EventTypesCompare orders on i alone, so a duplicate i would make the
+	// binary search in a type filter (stdlog's WithTypes) match whichever of
+	// the two it happened to land on. Refuse the collision at registration.
+	for _, registered := range events {
+		if registered.i == i {
+			panic(fmt.Sprintf("event type i=%d is already registered as %q, cannot register it as %q",
+				i, registered.s, s))
+		}
+	}
 	var eventType = EventType{
+		e: isError,
 		i: i,
 		s: s,
 	}
@@ -61,16 +89,22 @@ func (e EventType) IsError() bool {
 	return e.e
 }
 
+// events holds every built-in EventType. Observers that filter by type
+// (stdlog's WithTypes, printers.Pretty's column widths) read it through
+// Events(), so a type missing here is a type those observers silently drop.
+// Keep it exhaustive: every EventType* constructor below must appear.
 var events = []EventType{
+	EventTypeLog(),
+	EventTypeSpanLink(),
 	EventTypeMetric(),
-	//EventTypeLog(),
-	//EventTypeLink(),
 	EventTypeSpanStart(),
 	EventTypeSpanFinish(),
 	EventTypeSpanInstanceOnline(),
 	EventTypeSpanInstanceOffline(),
 	EventTypeSpanServiceStart(),
 	EventTypeSpanServiceFinish(),
+	EventTypeSpanWorkerStart(),
+	EventTypeSpanWorkerFinish(),
 	EventTypeSpanInternalMessageSent(),
 	EventTypeSpanInternalMessageReceived(),
 	EventTypeSpanExternalMessageSent(),
@@ -79,10 +113,15 @@ var events = []EventType{
 	EventTypeLogWarn(),
 	EventTypeLogDebug(),
 	EventTypeLogError(),
+	EventTypeLogFatal(),
+	EventTypeLogErrorDevice(),
 	EventTypeLogErrorStorage(),
 	EventTypeLogErrorNetwork(),
 	EventTypeLogErrorExternal(),
 	EventTypeLogErrorInternal(),
+	EventTypeMetricGauge(),
+	EventTypeMetricCounter(),
+	EventTypeMetricHistogram(),
 }
 
 func Events() []EventType {
@@ -252,7 +291,7 @@ func EventTypeSpanInternalMessageReceived() EventType {
 func EventTypeSpanExternalMessageSent() EventType {
 	return EventType{
 		i: 25,
-		s: "span:message_external:sent",
+		s: "span:external_message:sent",
 	}
 }
 

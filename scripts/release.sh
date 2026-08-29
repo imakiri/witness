@@ -63,7 +63,7 @@ sync_gowork() {
     printf '%s\n' "${lines[@]:-}" | grep -q "^replace $m " && continue
     t=${RELVER[$d]:-}                       # being released in this run
     [ -n "$t" ] || t=$(latest "$d")
-    # fall back to a prerelease tag (e.g. v1.0.0-dev) -- fine for a replace,
+    # fall back to a prerelease tag (e.g. v0.31.0-rc1) -- fine for a replace,
     # which only needs a version key, not a releasable one
     [ -n "$t" ] || t=$(git tag --list "$(tagpfx "$d")v[0-9]*" --sort=-v:refname | head -1)
     [ -n "$t" ] || { echo "go.work: no tag at all for $d, no replace" >&2; continue; }

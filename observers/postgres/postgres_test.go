@@ -255,6 +255,32 @@ func TestObserverObserveAfterCloseDoesNotPanic(t *testing.T) {
 	}
 }
 
+// After Close every event is dropped and counted. The buffer is deliberately
+// left with room to spare: a single select over <-done, the send and a
+// default picks randomly among ready cases, so it used to enqueue roughly
+// half of these and count none of them.
+func TestObserverAfterCloseDropsAndCountsEveryEvent(t *testing.T) {
+	const events = 100
+	obs := newObserver(Config{
+		CollectionDuration: time.Hour, // ticker effectively disabled
+		CollectionMaxSize:  events * 2,
+		BatchTimeout:       time.Hour,
+		ShutdownTimeout:    time.Second,
+	}, &stubConn{}, 1)
+	obs.Close()
+
+	for range events {
+		obs.Observe(makeEvent())
+	}
+
+	if got := obs.Dropped(); got != events {
+		t.Errorf("Dropped() = %d, want %d", got, events)
+	}
+	if n := len(obs.observeCh); n != 0 {
+		t.Errorf("%d events sit in the channel after Close, want 0", n)
+	}
+}
+
 // TestObserverPropagatesServiceName — events emitted through a witness.Context
 // that went through witness.Instance must land in DB with the right
 // service_name column populated end-to-end. Integration test, env-gated.
