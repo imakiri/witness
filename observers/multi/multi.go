@@ -1,7 +1,4 @@
-// Package tee
-//
-// Deprecated: use github.com/imakiri/witness/observers/multi
-package tee
+package multi
 
 import (
 	"github.com/imakiri/witness"

@@ -185,5 +185,5 @@ func (e errRecord) KeyEqual(target string) bool   { return target == "err" }
 
 type headerCarrier struct{ h http.Header }
 
-func (c headerCarrier) Get(k string) string   { return c.h.Get(k) }
-func (c headerCarrier) Set(k, v string)       { c.h.Set(k, v) }
+func (c headerCarrier) Get(k string) string { return c.h.Get(k) }
+func (c headerCarrier) Set(k, v string)     { c.h.Set(k, v) }

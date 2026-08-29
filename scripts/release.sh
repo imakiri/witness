@@ -8,7 +8,8 @@
 #   scripts/release.sh sync                                  # go.work replaces only
 #
 # prepare: tidy, bump the listed modules, rewrite every intra-repo require to
-# the resulting versions, refresh the go.work replaces, record the tags in
+# the resulting versions, refresh the go.work replaces, run the tests of every
+# bumped module, record the tags in
 # ./.release. Leaves the changes in
 # the working tree -- committing and pushing is up to you.
 # tag: verify ./.release arrived on origin/main, then tag that commit and push.
@@ -62,7 +63,7 @@ sync_gowork() {
     printf '%s\n' "${lines[@]:-}" | grep -q "^replace $m " && continue
     t=${RELVER[$d]:-}                       # being released in this run
     [ -n "$t" ] || t=$(latest "$d")
-    # fall back to a prerelease tag (e.g. v1.0.0-dev) -- fine for a replace,
+    # fall back to a prerelease tag (e.g. v0.31.0-rc1) -- fine for a replace,
     # which only needs a version key, not a releasable one
     [ -n "$t" ] || t=$(git tag --list "$(tagpfx "$d")v[0-9]*" --sort=-v:refname | head -1)
     [ -n "$t" ] || { echo "go.work: no tag at all for $d, no replace" >&2; continue; }
@@ -89,6 +90,17 @@ REMOTE_TAGS=
 pushed() {
   [ -n "$REMOTE_TAGS" ] || REMOTE_TAGS=$(git ls-remote --tags origin | sed 's|.*refs/tags/||' | grep -v '\^{}$')
   printf '%s\n' "$REMOTE_TAGS" | grep -qx "$1"
+}
+
+# Nothing gets a version until its tests pass: sync_gowork runs first so the
+# workspace resolves the versions this run is about to create.
+test_bumped() {
+  local d
+  for d in "$@"; do
+    [ -n "${MODDIRS[$d]:-}" ] || continue
+    echo "test $d"
+    ( cd "$d" && go test ./... ) || { echo "tests failed in $d -- nothing prepared" >&2; exit 1; }
+  done
 }
 
 prepare() {
@@ -149,6 +161,8 @@ prepare() {
   done
 
   sync_gowork
+  # RELVER now holds this run's args plus any still-pending .release entries
+  test_bumped "${!RELVER[@]}"
 
   printf '%s\n' "${tags[@]}" | sort > .release
   echo "prepared: $(tr '\n' ' ' < .release)"

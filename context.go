@@ -27,7 +27,7 @@ import (
 // observers can group / filter / colour by service without reconstructing
 // the span chain at query time. Inherited unchanged by every child Context.
 type Context struct {
-	t        *testing.T
+	t           *testing.T
 	observer    Observer
 	spanIDs     []uuid.UUID
 	traceID     uuid.UUID
@@ -111,6 +111,7 @@ func (c Context) Join(cts ...Context) Context {
 		return bytes.Compare(a[:], b[:])
 	})
 	return Context{
+		t:           c.t,
 		observer:    c.observer,
 		spanIDs:     slices.Clone(slices.Compact(spanIDs)),
 		traceID:     c.traceID,
@@ -142,36 +143,42 @@ func (c Context) Info(msg string, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), msg, caller(1, 0), records...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), msg, caller(1), records...)
 }
 
 func (c Context) Warn(msg string, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogWarn(), msg, caller(1, 0), records...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogWarn(), msg, caller(1), records...)
 }
 
 func (c Context) Debug(msg string, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogDebug(), msg, caller(1, 0), records...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogDebug(), msg, caller(1), records...)
 }
 
 func (c Context) Error(msg string, err error, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1), appendError(records, err)...)
 }
 
 type Finish func(records ...Record)
 
-const keyContext = "witness.context:3D3DNvuPg4yxitoS0wG8Q0FpI0AeY9BQ"
+// keyContext is a unique type to prevent assignment: nothing outside this
+// package can construct the key, so nothing outside this package can
+// overwrite the witness Context on a ctx. It used to be a string constant —
+// reproducible by anyone who read it, and a foreign value stored under it
+// would fail the type assertion in From and silently downgrade the subtree
+// to NilObserver.
+type keyContext struct{}
 
 func With(ctx context.Context, c Context) context.Context {
-	return context.WithValue(ctx, keyContext, c)
+	return context.WithValue(ctx, keyContext{}, c)
 }
 
 func (c Context) To(ctx context.Context) context.Context {
@@ -179,7 +186,7 @@ func (c Context) To(ctx context.Context) context.Context {
 }
 
 func From(ctx context.Context) Context {
-	cs, ok := ctx.Value(keyContext).(Context)
+	cs, ok := ctx.Value(keyContext{}).(Context)
 	if ok {
 		return cs
 	}

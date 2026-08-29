@@ -9,12 +9,6 @@ import (
 	"time"
 )
 
-var debug = false
-
-func EnableDebug() {
-	debug = true
-}
-
 func appendError(records []Record, err error) []Record {
 	if err == nil {
 		return records
@@ -30,7 +24,7 @@ func Observe(ctx context.Context, eventID uuid.UUID, eventDate time.Time, eventT
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(eventID, eventDate, eventType, eventName, caller(1, 0), records...)
+	c.Observe(eventID, eventDate, eventType, eventName, caller(1), records...)
 }
 
 func Info(ctx context.Context, msg string, records ...Record) {
@@ -38,7 +32,7 @@ func Info(ctx context.Context, msg string, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), msg, caller(1, 0), records...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), msg, caller(1), records...)
 }
 
 func Warn(ctx context.Context, msg string, records ...Record) {
@@ -46,7 +40,7 @@ func Warn(ctx context.Context, msg string, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogWarn(), msg, caller(1, 0), records...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogWarn(), msg, caller(1), records...)
 }
 
 func Debug(ctx context.Context, msg string, records ...Record) {
@@ -54,7 +48,7 @@ func Debug(ctx context.Context, msg string, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogDebug(), msg, caller(1, 0), records...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogDebug(), msg, caller(1), records...)
 }
 
 func Error(ctx context.Context, msg string, err error, records ...Record) {
@@ -62,7 +56,7 @@ func Error(ctx context.Context, msg string, err error, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1), appendError(records, err)...)
 }
 
 func ErrorRF(ctx context.Context, msg string, err error, records ...Record) error {
@@ -70,7 +64,7 @@ func ErrorRF(ctx context.Context, msg string, err error, records ...Record) erro
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1, 0), appendError(records, err)...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
@@ -83,10 +77,10 @@ func ErrorOrInfo(ctx context.Context, okMsg, errMsg string, err error, records .
 		c.t.Helper()
 	}
 	if err != nil {
-		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), errMsg, caller(1, 0), appendError(records, err)...)
+		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), errMsg, caller(1), appendError(records, err)...)
 	} else {
 
-		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), okMsg, caller(1, 0), records...)
+		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), okMsg, caller(1), records...)
 	}
 }
 
@@ -95,7 +89,7 @@ func ErrorStorage(ctx context.Context, msg string, err error, records ...Record)
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorStorage(), msg, caller(1, 0), appendError(records, err)...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorStorage(), msg, caller(1), appendError(records, err)...)
 }
 
 func ErrorStorageF(ctx context.Context, msg string, err error, records ...Record) error {
@@ -103,7 +97,7 @@ func ErrorStorageF(ctx context.Context, msg string, err error, records ...Record
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorStorage(), msg, caller(1, 0), appendError(records, err)...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorStorage(), msg, caller(1), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
@@ -115,7 +109,7 @@ func ErrorNetwork(ctx context.Context, msg string, err error, records ...Record)
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorNetwork(), msg, caller(1, 0), appendError(records, err)...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorNetwork(), msg, caller(1), appendError(records, err)...)
 }
 
 func ErrorNetworkF(ctx context.Context, msg string, err error, records ...Record) error {
@@ -123,7 +117,7 @@ func ErrorNetworkF(ctx context.Context, msg string, err error, records ...Record
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorNetwork(), msg, caller(1, 0), appendError(records, err)...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorNetwork(), msg, caller(1), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
@@ -135,7 +129,7 @@ func ErrorExternal(ctx context.Context, msg string, err error, records ...Record
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorExternal(), msg, caller(1, 0), appendError(records, err)...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorExternal(), msg, caller(1), appendError(records, err)...)
 }
 
 func ErrorExternalF(ctx context.Context, msg string, err error, records ...Record) error {
@@ -143,7 +137,7 @@ func ErrorExternalF(ctx context.Context, msg string, err error, records ...Recor
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorExternal(), msg, caller(1, 0), appendError(records, err)...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorExternal(), msg, caller(1), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
@@ -155,7 +149,7 @@ func ErrorInternal(ctx context.Context, msg string, err error, records ...Record
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorInternal(), msg, caller(1, 0), appendError(records, err)...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorInternal(), msg, caller(1), appendError(records, err)...)
 }
 
 func ErrorInternalF(ctx context.Context, msg string, err error, records ...Record) error {
@@ -163,7 +157,7 @@ func ErrorInternalF(ctx context.Context, msg string, err error, records ...Recor
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorInternal(), msg, caller(1, 0), appendError(records, err)...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorInternal(), msg, caller(1), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
@@ -176,6 +170,7 @@ func ErrorInternalF(ctx context.Context, msg string, err error, records ...Recor
 // the current request.
 func (c Context) withChildSpan(spanID uuid.UUID) Context {
 	return Context{
+		t:           c.t,
 		observer:    c.observer,
 		spanIDs:     append(slices.Clone(c.spanIDs), spanID),
 		traceID:     c.traceID,
@@ -191,31 +186,40 @@ func (c Context) withChildSpan(spanID uuid.UUID) Context {
 // propagation.Inject(req.Header, c.TraceID(), c.CurrentSpanID()) carries
 // it across to downstream services, where InstanceContinue adopts it.
 func Trace(ctx context.Context, spanName string, records ...Record) (context.Context, Finish) {
+	var at = caller(1)
 	parent := From(ctx)
 	newSpan := uuid.Must(uuid.NewV7())
 	nc := Context{
+		t:           parent.t,
 		observer:    parent.observer,
 		spanIDs:     append(slices.Clone(parent.spanIDs), newSpan),
 		traceID:     newSpan,
 		serviceName: parent.serviceName,
 	}
-	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, caller(1, 0), records...)
-	return nc.To(ctx), func(records ...Record) {
-		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, caller(0, 1), records...)
-	}
-}
-
-func Span(ctx context.Context, spanName string, records ...Record) (context.Context, Finish) {
-	var nc = From(ctx).withChildSpan(uuid.Must(uuid.NewV7()))
 	if nc.t != nil {
 		nc.t.Helper()
 	}
-	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, caller(1, 0), records...)
+	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, at, records...)
 	return nc.To(ctx), func(records ...Record) {
 		if nc.t != nil {
 			nc.t.Helper()
 		}
-		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, caller(0, 1), records...)
+		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, at, records...)
+	}
+}
+
+func Span(ctx context.Context, spanName string, records ...Record) (context.Context, Finish) {
+	var at = caller(1)
+	var nc = From(ctx).withChildSpan(uuid.Must(uuid.NewV7()))
+	if nc.t != nil {
+		nc.t.Helper()
+	}
+	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, at, records...)
+	return nc.To(ctx), func(records ...Record) {
+		if nc.t != nil {
+			nc.t.Helper()
+		}
+		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, at, records...)
 	}
 }
 
@@ -224,7 +228,7 @@ func SpanStart(ctx context.Context, spanID uuid.UUID, spanName string, records .
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, caller(1, 0), records...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, caller(1), records...)
 }
 
 func SpanFinish(ctx context.Context, spanID uuid.UUID, spanName string, records ...Record) {
@@ -232,36 +236,38 @@ func SpanFinish(ctx context.Context, spanID uuid.UUID, spanName string, records 
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, caller(0, 1), records...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, caller(1), records...)
 }
 
 // Service is Span with span:service:start/finish event types.
 func Service(ctx context.Context, serviceName string, records ...Record) (context.Context, Finish) {
+	var at = caller(1)
 	nc := From(ctx).withChildSpan(uuid.Must(uuid.NewV7()))
 	if nc.t != nil {
 		nc.t.Helper()
 	}
-	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanServiceStart(), serviceName, caller(1, 0), records...)
+	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanServiceStart(), serviceName, at, records...)
 	return nc.To(ctx), func(records ...Record) {
 		if nc.t != nil {
 			nc.t.Helper()
 		}
-		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanServiceFinish(), serviceName, caller(0, 1), records...)
+		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanServiceFinish(), serviceName, at, records...)
 	}
 }
 
 // Worker is Span with span:wait_group:start/finish event types.
 func Worker(ctx context.Context, workerName string, records ...Record) (context.Context, Finish) {
+	var at = caller(1)
 	nc := From(ctx).withChildSpan(uuid.Must(uuid.NewV7()))
 	if nc.t != nil {
 		nc.t.Helper()
 	}
-	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanWorkerStart(), workerName, caller(1, 0), records...)
+	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanWorkerStart(), workerName, at, records...)
 	return nc.To(ctx), func(records ...Record) {
 		if nc.t != nil {
 			nc.t.Helper()
 		}
-		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanWorkerFinish(), workerName, caller(0, 1), records...)
+		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanWorkerFinish(), workerName, at, records...)
 	}
 }
 
@@ -269,21 +275,21 @@ func Worker(ctx context.Context, workerName string, records ...Record) (context.
 // in span_ids. Pair it with InternalMessageReceived on the recipient side; a
 // query for the shared msgID reconnects both sides of the hand-off.
 func InternalMessageSent(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
-	From(ctx).withChildSpan(msgID).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInternalMessageSent(), msgName, caller(1, 0), records...)
+	From(ctx).withChildSpan(msgID).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInternalMessageSent(), msgName, caller(1), records...)
 }
 
 func InternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
-	From(ctx).withChildSpan(msgID).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInternalMessageReceived(), msgName, caller(1, 0), records...)
+	From(ctx).withChildSpan(msgID).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInternalMessageReceived(), msgName, caller(1), records...)
 }
 
 // ExternalMessageSent is InternalMessageSent across a witness-system boundary
 // (outbound HTTP, third-party RPC, etc).
 func ExternalMessageSent(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
-	From(ctx).withChildSpan(msgID).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanExternalMessageSent(), msgName, caller(1, 0), records...)
+	From(ctx).withChildSpan(msgID).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanExternalMessageSent(), msgName, caller(1), records...)
 }
 
 func ExternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
-	From(ctx).withChildSpan(msgID).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanExternalMessageReceived(), msgName, caller(1, 0), records...)
+	From(ctx).withChildSpan(msgID).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanExternalMessageReceived(), msgName, caller(1), records...)
 }
 
 // InstanceContinue is Instance for the receiving side of a cross-service
@@ -299,13 +305,17 @@ func ExternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName strin
 // a plain Instance — there is no upstream to attach to.
 func InstanceContinue(ctx context.Context, observer Observer, instanceName, instanceVersion string,
 	parentTraceID, parentSpanID uuid.UUID, records ...Record) (context.Context, Finish) {
+	var at = caller(1)
 	if observer == nil {
 		observer = NilObserver{}
 	}
 	if parentTraceID == uuid.Nil {
-		return Instance(ctx, observer, instanceName, instanceVersion, records...)
+		return instance(ctx, observer, instanceName, instanceVersion, at, records...)
 	}
 	c := Context{
+		// Instance overrides the trace state of any Context already on ctx,
+		// but t is test plumbing, not trace state — carry it through.
+		t:           From(ctx).t,
 		observer:    observer,
 		spanIDs:     []uuid.UUID{uuid.Must(uuid.NewV7())},
 		traceID:     parentTraceID,
@@ -318,7 +328,7 @@ func InstanceContinue(ctx context.Context, observer Observer, instanceName, inst
 		EventDate:     time.Now(),
 		EventType:     EventTypeSpanInstanceOnline(),
 		EventMessage:  instanceName,
-		EventCaller:   caller(1, 0),
+		EventCaller:   at,
 		Records:       append(records, recordVersion),
 		TraceID:       c.traceID,
 		ParentTraceID: parentTraceID,
@@ -326,7 +336,7 @@ func InstanceContinue(ctx context.Context, observer Observer, instanceName, inst
 		ServiceName:   c.serviceName,
 	})
 	return With(ctx, c), func(records ...Record) {
-		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInstanceOffline(), instanceName, caller(1, 0), append(records, recordVersion)...)
+		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInstanceOffline(), instanceName, at, append(records, recordVersion)...)
 	}
 }
 
@@ -334,19 +344,27 @@ func InstanceContinue(ctx context.Context, observer Observer, instanceName, inst
 // uses it as both the local root and the trace_id. Overrides any existing
 // witness Context already stored on ctx.
 func Instance(ctx context.Context, observer Observer, instanceName string, instanceVersion string, records ...Record) (context.Context, Finish) {
+	return instance(ctx, observer, instanceName, instanceVersion, caller(1), records...)
+}
+
+// instance is Instance with the call site passed in, so that a delegating
+// caller (InstanceContinue with no upstream trace) still reports its own
+// caller rather than the delegation itself.
+func instance(ctx context.Context, observer Observer, instanceName, instanceVersion, at string, records ...Record) (context.Context, Finish) {
 	if observer == nil {
 		observer = NilObserver{}
 	}
 	rootSpan := uuid.Must(uuid.NewV7())
 	c := Context{
+		t:           From(ctx).t,
 		observer:    observer,
 		spanIDs:     []uuid.UUID{rootSpan},
 		traceID:     rootSpan,
 		serviceName: instanceName,
 	}
 	recordVersion := record{key: "version", value: instanceVersion}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInstanceOnline(), instanceName, caller(1, 0), append(records, recordVersion)...)
+	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInstanceOnline(), instanceName, at, append(records, recordVersion)...)
 	return With(ctx, c), func(records ...Record) {
-		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInstanceOffline(), instanceName, caller(1, 0), append(records, recordVersion)...)
+		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInstanceOffline(), instanceName, at, append(records, recordVersion)...)
 	}
 }

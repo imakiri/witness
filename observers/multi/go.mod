@@ -1,4 +1,4 @@
-module github.com/imakiri/witness/observers/tee
+module github.com/imakiri/witness/observers/multi
 
 go 1.23.1
 

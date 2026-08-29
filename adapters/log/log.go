@@ -24,26 +24,28 @@ func NewAdapter(ctx context.Context, eventType witness.EventType) *log.Logger {
 	return log.New(adapter, adapter.prefix, log.Llongfile|log.Lmicroseconds|log.Lmsgprefix)
 }
 
+// Write parses one line produced by the log.Logger built in NewAdapter and
+// re-emits it as a witness event. The header is everything before the uuid
+// prefix; its last whitespace-separated field is the "file:line:" that
+// Llongfile writes, whatever timestamp fields precede it. Errors are
+// reported as witness events and the line is reported as consumed — a
+// logging adapter must never make the caller's log.Println fail.
 func (a *Adapter) Write(p []byte) (n int, err error) {
 	var segments = bytes.Split(p, []byte(a.prefix))
 	if len(segments) != 2 {
 		witness.Error(a.ctx, "invalid segments", nil, record.Int("length", len(segments)))
-		return 0, err
+		return len(p), nil
 	}
 
-	var header = segments[0]
-	var headerSegments = bytes.Split(header, []byte(" "))
-	if len(headerSegments) != 3 {
-		witness.Error(a.ctx, "invalid header segments", nil, record.Int("length", len(segments)))
-		return 0, err
+	var headerSegments = bytes.Fields(segments[0])
+	if len(headerSegments) == 0 {
+		witness.Error(a.ctx, "invalid header segments", nil, record.Int("length", len(headerSegments)))
+		return len(p), nil
 	}
 
-	//var headerDate = headerSegments[0]
-	//var headerTime = headerSegments[1]
-	var headerCaller = headerSegments[2]
+	var headerCaller = bytes.TrimSuffix(headerSegments[len(headerSegments)-1], []byte(":"))
 	var body = segments[1]
 	body = bytes.TrimSuffix(body, []byte("\n"))
 	witness.From(a.ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), a.eventType, string(body), string(headerCaller))
 	return len(p), nil
 }
-

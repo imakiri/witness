@@ -1,68 +1,108 @@
 package stdlog
 
 import (
+	"errors"
+	"fmt"
 	"github.com/imakiri/witness"
-	"github.com/imakiri/witness/record"
+	"io"
 	"os"
 	"slices"
-	"time"
 )
 
 type Observer struct {
-	useStdErr      bool
-	types          []witness.EventType
-	printerOptions []record.PrinterOption
-	printer        *record.Printer
+	writer    io.Writer
+	errWriter io.Writer
+	types     []witness.EventType
+	flags     witness.PrintFlags
+	printer   witness.Printer
 }
 
-type Option func(o *Observer)
+type Option func(o *Observer) error
 
+// WithTypes restricts the observer to the listed event types; everything
+// else is dropped. Without it no filtering happens at all — including for
+// types registered via MustNewEventType after this observer was built.
 func WithTypes(types []witness.EventType) Option {
-	return func(o *Observer) {
-		o.types = types
+	return func(o *Observer) error {
+		o.types = slices.SortedFunc(slices.Values(types), witness.EventTypesCompare)
+		return nil
 	}
 }
 
+// WithWriter sets the destination for non-error events. Defaults to
+// os.Stdout. A nil writer is an error rather than a silent discard —
+// io.Discard says that on purpose.
+func WithWriter(w io.Writer) Option {
+	return func(o *Observer) error {
+		if w == nil {
+			return errors.New("stdlog: WithWriter: nil writer")
+		}
+		o.writer = w
+		return nil
+	}
+}
+
+// WithErrorWriter sets the destination for error events (EventType.IsError).
+// Defaults to whatever WithWriter set, i.e. os.Stdout — errors are not split
+// out unless you ask. Pass os.Stderr to separate them, or
+// io.MultiWriter(os.Stdout, os.Stderr) to get both.
+func WithErrorWriter(w io.Writer) Option {
+	return func(o *Observer) error {
+		if w == nil {
+			return errors.New("stdlog: WithErrorWriter: nil writer")
+		}
+		o.errWriter = w
+		return nil
+	}
+}
+
+// WithUsingStdErr routes error events to stderr.
+//
+// Deprecated: use WithErrorWriter(os.Stderr). It used to write errors to
+// stdout *and* stderr, printing every error twice; it is now stderr only.
+// For the old behaviour pass io.MultiWriter(os.Stdout, os.Stderr).
 func WithUsingStdErr() Option {
-	return func(o *Observer) {
-		o.useStdErr = true
+	return WithErrorWriter(os.Stderr)
+}
+
+func WithFlags(flags ...witness.PrintFlags) Option {
+	return func(o *Observer) error {
+		o.flags = witness.PrintNone
+		for _, f := range flags {
+			o.flags |= f
+		}
+		return nil
 	}
 }
 
-func WithPrinterOptions(options ...record.PrinterOption) Option {
-	return func(o *Observer) {
-		o.printerOptions = options
-	}
-}
-
-func NewObserver(options ...Option) *Observer {
-	var o = new(Observer)
-	for _, opt := range options {
-		opt(o)
+func NewObserver(printer witness.Printer, options ...Option) (*Observer, error) {
+	var o = &Observer{
+		printer: printer,
+		flags:   witness.PrintAll,
+		writer:  os.Stdout,
 	}
 
-	if o.types == nil {
-		o.types = witness.Events()
+	for i, option := range options {
+		if err := option(o); err != nil {
+			return nil, fmt.Errorf("failed at option %d: %w", i, err)
+		}
 	}
-	slices.SortFunc(o.types, witness.EventTypesCompare)
 
-	o.printer = record.NewPrinter(append([]record.PrinterOption{
-		record.PrinterWithMaxEventTypeLength(witness.CalcMaxEventValueLength(o.types)),
-	}, o.printerOptions...)...)
-
-	return o
-}
-
-func (o *Observer) appendTime(b []byte, t time.Time) []byte {
-	return t.AppendFormat(b, "2006-01-02T15:04:05.000000000Z07:00")
+	if o.errWriter == nil {
+		o.errWriter = o.writer
+	}
+	return o, nil
 }
 
 func (o *Observer) Observe(event witness.Event) {
-	if _, found := slices.BinarySearchFunc(o.types, event.EventType, witness.EventTypesCompare); !found {
-		return
+	if o.types != nil {
+		if _, found := slices.BinarySearchFunc(o.types, event.EventType, witness.EventTypesCompare); !found {
+			return
+		}
 	}
-	if event.EventType.IsError() && o.useStdErr {
-		o.printer.Print(os.Stderr, event)
+	var w = o.writer
+	if event.EventType.IsError() {
+		w = o.errWriter
 	}
-	o.printer.Print(os.Stdout, event)
+	o.printer.Print(w, event, o.flags)
 }

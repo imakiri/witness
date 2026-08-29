@@ -159,7 +159,7 @@ VALUES
     (-23,  'span:wait_group:finish'),
     (24,   'span:internal_message:sent'),
     (-24,  'span:internal_message:received'),
-    (25,   'span:message_external:sent'),
+    (25,   'span:external_message:sent'),
     (-25,  'span:external_message:received'),
     (30,   'metric:gauge'),
     (31,   'metric:counter'),

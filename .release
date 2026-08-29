@@ -1,1 +1,11 @@
-v0.29.0
+adapters/log/v0.5.0
+observers/multi/v0.1.0
+observers/otlp/v0.2.0
+observers/postgres/v0.3.0
+observers/prometheus/v0.2.0
+observers/stdlog/v0.23.0
+observers/tee/v0.6.0
+observers/test/v0.4.0
+printers/v0.1.0
+record/v0.20.0
+v0.30.0

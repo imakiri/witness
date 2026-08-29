@@ -3,6 +3,7 @@ package record
 import (
 	"github.com/stretchr/testify/require"
 	"os"
+	"strconv"
 	"testing"
 )
 
@@ -29,7 +30,7 @@ func TestStruct1(t *testing.T) {
 		},
 	}
 
-	var marshaller = Marshaller[DefaultFormatter]{
+	var marshaller = Marshaller[DefaultKeyJoiner]{
 		MaxDepth: 16,
 	}
 
@@ -51,4 +52,23 @@ test.testStruct2.T[1] 98
 `
 	_, _ = os.Stdout.Write(buf)
 	require.Equal(t, expected, string(buf))
+}
+
+func TestFloatIsReadableAndRoundTrips(t *testing.T) {
+	for _, tc := range []struct {
+		value float64
+		want  string
+	}{
+		{0.014, "0.014"},
+		{1, "1"},
+		{-2.5, "-2.5"},
+		{1234567.25, "1.23456725e+06"},
+	} {
+		var got = string(Float("k", tc.value).AppendValue(nil))
+		require.Equal(t, tc.want, got)
+
+		back, err := strconv.ParseFloat(got, 64)
+		require.NoError(t, err)
+		require.Equal(t, tc.value, back)
+	}
 }
