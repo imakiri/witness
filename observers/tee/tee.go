@@ -11,6 +11,9 @@ type Observer struct {
 	observers []witness.Observer
 }
 
+// NewObserver
+//
+// Deprecated: use github.com/imakiri/witness/observers/multi.NewObserver
 func NewObserver(observers ...witness.Observer) Observer {
 	return Observer{observers: observers}
 }
