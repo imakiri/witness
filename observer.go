@@ -46,4 +46,4 @@ type Observer interface {
 
 type NilObserver struct{}
 
-func (n NilObserver) Observe(event Event) {}
+func (n NilObserver) Observe(_ Event) {}
