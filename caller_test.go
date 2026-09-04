@@ -67,23 +67,20 @@ func TestCallers(t *testing.T) {
 			"ErrorRF(": func(ctx context.Context) {
 				_ = ErrorRF(ctx, "m", errTest)
 			},
-			"ErrorStorage(": func(ctx context.Context) {
-				ErrorStorage(ctx, "m", errTest)
+			"Fatal(": func(ctx context.Context) {
+				Fatal(ctx, "m", errTest)
 			},
-			"ErrorStorageF(": func(ctx context.Context) {
-				_ = ErrorStorageF(ctx, "m", errTest)
+			"Panic(": func(ctx context.Context) {
+				Panic(ctx, "m", "boom")
 			},
-			"ErrorNetwork(": func(ctx context.Context) {
-				ErrorNetwork(ctx, "m", errTest)
+			"Count(": func(ctx context.Context) {
+				Count(ctx, "m", 1)
 			},
-			"ErrorNetworkF(": func(ctx context.Context) {
-				_ = ErrorNetworkF(ctx, "m", errTest)
+			"Gauge(": func(ctx context.Context) {
+				Gauge(ctx, "m", 1)
 			},
-			"ErrorExternal(": func(ctx context.Context) {
-				ErrorExternal(ctx, "m", errTest)
-			},
-			"ErrorInternal(": func(ctx context.Context) {
-				ErrorInternal(ctx, "m", errTest)
+			"Sample(": func(ctx context.Context) {
+				Sample(ctx, "m", 1)
 			},
 			"ErrorOrInfo(": func(ctx context.Context) {
 				ErrorOrInfo(ctx, "ok", "err", nil)
@@ -116,14 +113,6 @@ func TestCallers(t *testing.T) {
 				_, f := Span(ctx, "s")
 				return f
 			},
-			"Service(": func(ctx context.Context) core.Finish {
-				_, f := Service(ctx, "s")
-				return f
-			},
-			"Worker(": func(ctx context.Context) core.Finish {
-				_, f := Worker(ctx, "s")
-				return f
-			},
 		}
 		for token, open := range cases {
 			t.Run(strings.TrimSuffix(token, "("), func(t *testing.T) {
@@ -134,6 +123,33 @@ func TestCallers(t *testing.T) {
 				require.Len(t, events, 2)
 				requireCaller(t, events[0], token)
 				requireCaller(t, events[1], token)
+			})
+		}
+	})
+
+	// The receiving constructors emit three events — start, the message, and
+	// finish — and all three report the constructor's line.
+	t.Run("receiving constructors", func(t *testing.T) {
+		var cases = map[string]func(ctx context.Context) core.Finish{
+			"Handle(": func(ctx context.Context) core.Finish {
+				_, f := Handle(ctx, uuid.Must(uuid.NewV7()), "s")
+				return f
+			},
+			"HandleAll(": func(ctx context.Context) core.Finish {
+				_, f := HandleAll(ctx, []uuid.UUID{uuid.Must(uuid.NewV7())}, "s")
+				return f
+			},
+		}
+		for token, open := range cases {
+			t.Run(strings.TrimSuffix(token, "("), func(t *testing.T) {
+				obs, ctx := newCallerTest(t)
+				var finish = open(ctx)
+				finish()
+				var events = obs.all()
+				require.Len(t, events, 3)
+				for _, e := range events {
+					requireCaller(t, e, token)
+				}
 			})
 		}
 	})
@@ -157,23 +173,17 @@ func TestCallers(t *testing.T) {
 			"SpanFinish(": func(ctx context.Context) {
 				SpanFinish(ctx, id, "s")
 			},
-			"InternalMessageSent(": func(ctx context.Context) {
-				InternalMessageSent(ctx, "m")
+			"Sent(": func(ctx context.Context) {
+				Sent(ctx, id, "m")
 			},
-			"InternalMessageReceived(": func(ctx context.Context) {
-				InternalMessageReceived(ctx, id, "m")
+			"Received(": func(ctx context.Context) {
+				Received(ctx, id, "m")
 			},
-			"ExternalMessageSent(": func(ctx context.Context) {
-				ExternalMessageSent(ctx, "m")
+			"ReceivedAll(": func(ctx context.Context) {
+				ReceivedAll(ctx, []uuid.UUID{id}, "m")
 			},
 			"Link(": func(ctx context.Context) {
-				Link(ctx, "l")
-			},
-			"LinkTo(": func(ctx context.Context) {
-				LinkTo(ctx, id, "l")
-			},
-			"ExternalMessageReceived(": func(ctx context.Context) {
-				ExternalMessageReceived(ctx, id, "m")
+				Link(ctx, id, "l")
 			},
 		}
 		for token, call := range cases {

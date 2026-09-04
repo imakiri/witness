@@ -102,10 +102,10 @@ Two task handlers run in parallel under main:
 |--------------------------------------|--------------------------|------------------------|----------------------|--------------------------------------------------------------------------------|
 | 019e4094-0991-7d53-b481-ccb7a206350a | 2026-05-19T14:11:55.897Z | span:general:start     | called main function | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ]                                       |
 | 019e4096-3c7c-7773-ac5d-1fa06d15dc3b | 2026-05-19T14:14:14.144Z | log:info               | preparing tasks      | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ]                                       |
-| 019e4097-14a7-7846-9bdd-a4c2a1147441 | 2026-05-19T14:15:07.801Z | span:wait_group:start  | called task handler  | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e4097-86b7-7584-b87d-07347f21f563 ] |
-| 019e4097-14a7-7846-9bdd-a4c2a1147442 | 2026-05-19T14:15:07.901Z | span:wait_group:start  | called task handler  | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e40a6-4ffd-747f-b070-db87ac5857e6 ] |
-| 019e4098-564d-724f-a404-a4186aa9f5ea | 2026-05-19T14:16:33.184Z | span:wait_group:finish | task done            | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e4097-86b7-7584-b87d-07347f21f563 ] |
-| 019e4098-8af2-7eb9-b0ae-78af1482b941 | 2026-05-19T14:16:52.107Z | span:wait_group:finish | task done            | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e40a6-4ffd-747f-b070-db87ac5857e6 ] |
+| 019e4097-14a7-7846-9bdd-a4c2a1147441 | 2026-05-19T14:15:07.801Z | span:general:start    | called task handler  | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e4097-86b7-7584-b87d-07347f21f563 ] |
+| 019e4097-14a7-7846-9bdd-a4c2a1147442 | 2026-05-19T14:15:07.901Z | span:general:start    | called task handler  | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e40a6-4ffd-747f-b070-db87ac5857e6 ] |
+| 019e4098-564d-724f-a404-a4186aa9f5ea | 2026-05-19T14:16:33.184Z | span:general:finish   | task done            | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e4097-86b7-7584-b87d-07347f21f563 ] |
+| 019e4098-8af2-7eb9-b0ae-78af1482b941 | 2026-05-19T14:16:52.107Z | span:general:finish   | task done            | [ 019e4094-8426-770e-b9ce-032cf328bcf6, 019e40a6-4ffd-747f-b070-db87ac5857e6 ] |
 | 019e40a6-ecc4-7ef1-949e-c1754431d89b | 2026-05-19T14:32:28.997Z | span:general:finish    | all tasks done       | [ 019e4094-8426-770e-b9ce-032cf328bcf6 ]                                       |
 
 ### Messaging
@@ -118,11 +118,11 @@ it — both reference it, marked `link`. A single
 | event_type                     | event_message   | event_span_ids                                         | span_flags                    |
 |--------------------------------|-----------------|--------------------------------------------------------|-------------------------------|
 | span:instance:online           | producer        | [ 019e4094-…bcf6 ]                                     | own\|instance                 |
-| span:internal_message:sent     | task dispatched | [ 019e4094-…bcf6, **019e4097-…f563** ]                 | own\|instance, link           |
+| span:message:sent     | task dispatched | [ 019e4094-…bcf6, **019e4097-…f563** ]                 | own\|instance, link           |
 | span:instance:offline          | producer        | [ 019e4094-…bcf6 ]                                     | own\|instance                 |
 | span:instance:online           | consumer        | [ 019e40be-…194a ]                                     | own\|instance                 |
 | span:general:start             | handle task     | [ 019e40be-…194a, 019e40bf-…7a3c ]                     | parent\|instance, own         |
-| span:internal_message:received | task received   | [ 019e40be-…194a, 019e40bf-…7a3c, **019e4097-…f563** ] | ancestor\|instance, own, link |
+| span:message:received | task received   | [ 019e40be-…194a, 019e40bf-…7a3c, **019e4097-…f563** ] | ancestor\|instance, own, link |
 | span:general:finish            | handle task     | [ 019e40be-…194a, 019e40bf-…7a3c ]                     | parent\|instance, own         |
 | span:instance:offline          | consumer        | [ 019e40be-…194a ]                                     | own\|instance                 |
 
@@ -154,7 +154,7 @@ Everything a witness call can do falls into four shapes.
 
 ```go
 witness.Info(ctx, "cache warm", record.Int("entries", n))
-witness.ErrorNetworkF(ctx, "fetch prices", err) // also returns a wrapped error
+witness.ErrorRF(ctx, "fetch prices", err) // also returns a wrapped error
 ```
 
 **2. Open a child span.** Returns a context whose current span is the new one, plus a
@@ -165,7 +165,7 @@ ctx, finish := witness.Span(ctx, "settle batch")
 defer finish()
 ```
 
-`Service` and `Worker` are the same with their own event types. `SpanStart` takes the
+`SpanStart` takes the
 span_id from the caller, for ids that must exist before the span does.
 
 **3. Open a root — a process.**
@@ -184,15 +184,20 @@ whatever carrier it has; the other references the same id. Neither opens or clos
 
 ```go
 // sender
-linkID := witness.Link(ctx, "job dispatch")
+linkID := uuid.Must(uuid.NewV7())
+witness.Link(ctx, linkID, "job dispatch")
 carrier.Set("x-link", linkID.String())
 
 // receiver, inside its own span
-witness.LinkTo(ctx, linkID, "job dispatch")
+witness.Link(ctx, linkID, "job dispatch")
 ```
 
-`InternalMessage{Sent,Received}` and `ExternalMessage{Sent,Received}` are the same pair
-with message event types — `*Sent` mints and returns the id, `*Received` takes it.
+`Sent` / `Received` are the same pair with message event types, and
+`Handle` / `HandleAll` open a span for the work a message triggered with the
+receiving half recorded inside it. Both take the id: it has
+to exist before the send (it travels in the carrier), while the event says the hand-off
+happened, so emit `Sent` once the send succeeded. `ReceivedAll` takes a slice, for a
+worker that picks up a whole batch at once.
 
 ---
 
@@ -207,14 +212,16 @@ Over HTTP the `propagation` package does it with a W3C `traceparent`:
 
 ```go
 // sender
-msgID := witness.ExternalMessageSent(ctx, "POST /settle")
+msgID := uuid.Must(uuid.NewV7())
 propagation.Inject(req.Header, msgID)
+// ... send it, then:
+witness.Sent(ctx, msgID, "POST /settle")
 
 // receiver
 ctx, finish := witness.Span(instanceCtx, "POST /settle")
 defer finish()
 if upstream, ok := propagation.Extract(r.Header); ok {
-witness.ExternalMessageReceived(ctx, upstream, "POST /settle")
+witness.Received(ctx, upstream, "POST /settle")
 }
 ```
 

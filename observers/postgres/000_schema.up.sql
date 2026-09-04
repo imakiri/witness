@@ -87,6 +87,25 @@ CREATE INDEX spans_own_lookup
     ON witness.spans (span_id, event_id)
     WHERE span_flags & 1 <> 0;
 
+-- The event types the producer knows about, upserted by the observer at
+-- start-up from core.Events(). SQL has no other way to name a type or to
+-- know which ones are errors: both live in Go, and MustNewEventType lets a
+-- program register its own at runtime, so a hardcoded list in this file
+-- would be a copy that silently rots and could never cover custom types.
+--
+-- Written once per process start, never by the event path. A type
+-- registered *after* the observer was built is not in here — register
+-- custom types in init().
+CREATE TABLE witness.event_types
+(
+    event_type      int8         NOT NULL PRIMARY KEY,
+    event_type_name varchar(128) NOT NULL,
+    -- Mirrors core.EventType.IsError(): the flag that routes an event to
+    -- stdlog's error writer and trips test.WithFailOnError. Grafana's error
+    -- counts read it instead of hardcoding a list of ids.
+    is_error        boolean      NOT NULL
+);
+
 CREATE TABLE witness.records
 (
     event_id     uuid NOT NULL REFERENCES witness.events (event_id),

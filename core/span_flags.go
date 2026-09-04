@@ -45,7 +45,7 @@ const (
 	SpanFlagInstance SpanFlags = 1 << 3
 
 	// SpanFlagLink marks a span this event merely *references*: the shared
-	// point of a hand-off (Link / LinkTo, the message helpers). It carries
+	// point of a hand-off (Link, the message helpers). It carries
 	// no positional role — a link is never own, parent or ancestor, because
 	// the process never enters it. It sits after the chain in
 	// Event.SpanIDs.

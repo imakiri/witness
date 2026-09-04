@@ -94,11 +94,20 @@ func NewObserver(printer core.Printer, options ...Option) (*Observer, error) {
 	return o, nil
 }
 
+// Accepts answers from the WithTypes set, so an event this observer would
+// have dropped is never built in the first place. Without WithTypes it
+// accepts everything, as Observe does.
+func (o *Observer) Accepts(eventType core.EventType) bool {
+	if o.types == nil {
+		return true
+	}
+	_, found := slices.BinarySearchFunc(o.types, eventType, core.EventTypesCompare)
+	return found
+}
+
 func (o *Observer) Observe(event core.Event) {
-	if o.types != nil {
-		if _, found := slices.BinarySearchFunc(o.types, event.EventType, core.EventTypesCompare); !found {
-			return
-		}
+	if !o.Accepts(event.EventType) {
+		return
 	}
 	var w = o.writer
 	if event.EventType.IsError() {

@@ -101,24 +101,14 @@ var events = []EventType{
 	EventTypeSpanFinish(),
 	EventTypeSpanInstanceOnline(),
 	EventTypeSpanInstanceOffline(),
-	EventTypeSpanServiceStart(),
-	EventTypeSpanServiceFinish(),
-	EventTypeSpanWorkerStart(),
-	EventTypeSpanWorkerFinish(),
-	EventTypeSpanInternalMessageSent(),
-	EventTypeSpanInternalMessageReceived(),
-	EventTypeSpanExternalMessageSent(),
-	EventTypeSpanExternalMessageReceived(),
+	EventTypeSpanMessageSent(),
+	EventTypeSpanMessageReceived(),
 	EventTypeLogInfo(),
 	EventTypeLogWarn(),
 	EventTypeLogDebug(),
 	EventTypeLogError(),
 	EventTypeLogFatal(),
-	EventTypeLogErrorDevice(),
-	EventTypeLogErrorStorage(),
-	EventTypeLogErrorNetwork(),
-	EventTypeLogErrorExternal(),
-	EventTypeLogErrorInternal(),
+	EventTypeLogPanic(),
 	EventTypeMetricGauge(),
 	EventTypeMetricCounter(),
 	EventTypeMetricHistogram(),
@@ -162,6 +152,10 @@ func EventTypeLogError() EventType {
 		s: "log:error",
 	}
 }
+
+// EventTypeLogFatal use when the process cannot continue. Recording it does
+// not stop anything — witness never exits or panics on its own behalf; the
+// caller does that after the event is emitted.
 func EventTypeLogFatal() EventType {
 	return EventType{
 		e: true,
@@ -170,48 +164,21 @@ func EventTypeLogFatal() EventType {
 	}
 }
 
-// EventTypeLogErrorInternal use when system fails due to internal error
-func EventTypeLogErrorInternal() EventType {
+// EventTypeLogPanic use from a recover() to record a panic that was caught.
+//
+// There is deliberately no taxonomy of error causes here — the types
+// log:error:{internal,external,device,storage,network} existed and were
+// removed. Nothing in witness or in SQL ever branched on which one an event
+// carried (every consumer reads EventType.IsError()), the boundaries between
+// them were a guess each program draws differently, and the same fact says
+// more as a record: record.String("kind", "postgres") is open-ended where a
+// five-value enum is not. A program that wants a closed set of its own has
+// MustNewErrorEventType, whose |i| >= 1000 range exists for exactly this.
+func EventTypeLogPanic() EventType {
 	return EventType{
 		e: true,
-		i: 100,
-		s: "log:error:internal",
-	}
-}
-
-// EventTypeLogErrorExternal use when system fails due to failure of an external system e.g. invalid ingoing request or response
-func EventTypeLogErrorExternal() EventType {
-	return EventType{
-		e: true,
-		i: 101,
-		s: "log:error:external",
-	}
-}
-
-// EventTypeLogErrorDevice use when system fails to communicate with internal device
-func EventTypeLogErrorDevice() EventType {
-	return EventType{
-		e: true,
-		i: 102,
-		s: "log:error:device",
-	}
-}
-
-// EventTypeLogErrorStorage use when system fails to write or read file on disk or other persistent storage
-func EventTypeLogErrorStorage() EventType {
-	return EventType{
-		e: true,
-		i: 103,
-		s: "log:error:storage",
-	}
-}
-
-// EventTypeLogErrorNetwork use when system fails to reach another system via network
-func EventTypeLogErrorNetwork() EventType {
-	return EventType{
-		e: true,
-		i: 104,
-		s: "log:error:network",
+		i: 15,
+		s: "log:panic",
 	}
 }
 
@@ -221,6 +188,22 @@ func EventTypeSpanLink() EventType {
 		s: "span:link",
 	}
 }
+
+// EventTypeSpanStart opens a span; EventTypeSpanFinish closes it.
+//
+// There is one kind of span. span:service:start/finish (22) and
+// span:wait_group:start/finish (23, emitted by a witness.Worker) were
+// removed: nothing branched on them — otlp routed both through the same
+// start/finish handlers, the SQL views matched the whole 20..23 range — so
+// the only difference was the string in the output, which a span's *name*
+// already carries. "service" was actively misleading on top of that: in this
+// model a service is the instance span at the head of the chain, the one
+// flagged SpanFlagInstance whose span:instance:online event names it, not a
+// child span somewhere below.
+//
+// A program that wants machine-readable span kinds registers its own paired
+// type with MustNewEventType (|i| >= 1000, +/- for start/finish); the views
+// accept that range and witness.event_types now gives it a name in SQL.
 func EventTypeSpanStart() EventType {
 	return EventType{
 		i: 20,
@@ -246,60 +229,28 @@ func EventTypeSpanInstanceOffline() EventType {
 	}
 }
 
-func EventTypeSpanServiceStart() EventType {
-	return EventType{
-		i: 22,
-		s: "span:service:start",
-	}
-}
-func EventTypeSpanServiceFinish() EventType {
-	return EventType{
-		i: -22,
-		s: "span:service:finish",
-	}
-}
-func EventTypeSpanWorkerStart() EventType {
-	return EventType{
-		i: 23,
-		s: "span:wait_group:start",
-	}
-}
-func EventTypeSpanWorkerFinish() EventType {
-	return EventType{
-		i: -23,
-		s: "span:wait_group:finish",
-	}
-}
-
-// EventTypeSpanInternalMessageSent use when sending message to service within your witness system
-func EventTypeSpanInternalMessageSent() EventType {
+// EventTypeSpanMessageSent use when handing a message off: the sender's half
+// of a link, on a msgID the sender put in the envelope.
+//
+// There is no internal/external variant. The pair used to be doubled (24/25)
+// depending on whether the peer was inside your witness system, and nothing
+// ever read the difference — every view treats the two as one set and the
+// otlp observer routes them through one branch. Where the distinction
+// matters (a peer outside the system never emits its half, so a link with no
+// receiving side is expected rather than a lost message) say so in a record.
+func EventTypeSpanMessageSent() EventType {
 	return EventType{
 		i: 24,
-		s: "span:internal_message:sent",
+		s: "span:message:sent",
 	}
 }
 
-// EventTypeSpanInternalMessageReceived use when receiving message from service within your witness system
-func EventTypeSpanInternalMessageReceived() EventType {
+// EventTypeSpanMessageReceived use when taking a message off a carrier: the
+// receiver's half, on the msgID that arrived with it.
+func EventTypeSpanMessageReceived() EventType {
 	return EventType{
 		i: -24,
-		s: "span:internal_message:received",
-	}
-}
-
-// EventTypeSpanExternalMessageSent use when sending message to service outside your witness system
-func EventTypeSpanExternalMessageSent() EventType {
-	return EventType{
-		i: 25,
-		s: "span:external_message:sent",
-	}
-}
-
-// EventTypeSpanExternalMessageReceived use when receiving message from service outside your witness system
-func EventTypeSpanExternalMessageReceived() EventType {
-	return EventType{
-		i: -25,
-		s: "span:external_message:received",
+		s: "span:message:received",
 	}
 }
 

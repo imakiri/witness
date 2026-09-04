@@ -12,6 +12,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/core"
 	"github.com/imakiri/witness/observers/postgres"
@@ -90,7 +91,7 @@ func callPeer(ctx context.Context, client *http.Client, url, peer, msgName, body
 
 	// The send mints the shared span_id and hands it back for the carrier;
 	// the peer references the same id and a query on it returns both sides.
-	msgID := witness.ExternalMessageSent(ctx, msgName, record.String("url", url))
+	var msgID = uuid.Must(uuid.NewV7())
 	propagation.Inject(req.Header, msgID)
 
 	resp, err := client.Do(req)
@@ -98,8 +99,10 @@ func callPeer(ctx context.Context, client *http.Client, url, peer, msgName, body
 		witness.Error(ctx, "call "+peer, err)
 		return
 	}
+	// Emitted after the call succeeded: a send that failed handed nothing off.
+	witness.Sent(ctx, msgID, msgName, record.String("url", url))
 	resp.Body.Close()
-	witness.ExternalMessageReceived(ctx, msgID, "response from "+peer,
+	witness.Info(ctx, "response from "+peer,
 		record.Int("status", resp.StatusCode))
 }
 

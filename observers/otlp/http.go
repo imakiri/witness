@@ -36,8 +36,8 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 // call and put SpanFlagInstance on thousands of spans.
 //
 // When the request carries a W3C traceparent, the span_id it names is
-// *referenced* from inside the request span with witness.ExternalMessageReceived
-// — not entered. Both processes then emit events carrying that span_id, so
+// *referenced* from inside the request span with witness.Received — not
+// entered. Both processes then emit events carrying that span_id, so
 // one query on it returns both sides, while each span's start and finish
 // stay with the process that owns it.
 func Middleware(instanceCtx context.Context) func(http.Handler) http.Handler {
@@ -47,7 +47,7 @@ func Middleware(instanceCtx context.Context) func(http.Handler) http.Handler {
 			ctx, finish := witness.Span(core.From(instanceCtx).To(r.Context()), name)
 			defer finish()
 			if upstreamSpanID, ok := Extract(r.Header); ok {
-				witness.ExternalMessageReceived(ctx, upstreamSpanID, name)
+				witness.Received(ctx, upstreamSpanID, name)
 			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

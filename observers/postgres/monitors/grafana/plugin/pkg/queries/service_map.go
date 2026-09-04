@@ -54,6 +54,7 @@ SELECT le.from_service_name,
  WHERE le.from_span_id IN (SELECT span_id FROM trace_spans)
    AND le.from_service_name IS NOT NULL
    AND le.to_service_name   IS NOT NULL
+   AND le.from_service_name IS DISTINCT FROM le.to_service_name
  GROUP BY le.from_service_name, le.to_service_name`
 
 // RunServiceMap is the entrypoint registered by the QueryData router.

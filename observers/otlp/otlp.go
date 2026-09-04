@@ -60,14 +60,10 @@ func (o *Observer) Shutdown(ctx context.Context) error {
 func (o *Observer) Observe(event core.Event) {
 	switch event.EventType {
 	case core.EventTypeSpanStart(),
-		core.EventTypeSpanServiceStart(),
-		core.EventTypeSpanWorkerStart(),
 		core.EventTypeSpanInstanceOnline():
 		o.startSpan(event)
 
 	case core.EventTypeSpanFinish(),
-		core.EventTypeSpanServiceFinish(),
-		core.EventTypeSpanWorkerFinish(),
 		core.EventTypeSpanInstanceOffline():
 		o.finishSpan(event)
 
@@ -77,17 +73,13 @@ func (o *Observer) Observe(event core.Event) {
 		o.addEvent(event)
 
 	case core.EventTypeLogError(),
-		core.EventTypeLogErrorStorage(),
-		core.EventTypeLogErrorNetwork(),
-		core.EventTypeLogErrorExternal(),
-		core.EventTypeLogErrorInternal():
+		core.EventTypeLogFatal(),
+		core.EventTypeLogPanic():
 		o.recordError(event)
 
 	case core.EventTypeSpanLink(),
-		core.EventTypeSpanInternalMessageSent(),
-		core.EventTypeSpanExternalMessageSent(),
-		core.EventTypeSpanInternalMessageReceived(),
-		core.EventTypeSpanExternalMessageReceived():
+		core.EventTypeSpanMessageSent(),
+		core.EventTypeSpanMessageReceived():
 		o.linkEvent(event)
 	}
 }
@@ -260,7 +252,7 @@ func (o *Observer) recordError(event core.Event) {
 	)
 }
 
-// linkEvent records a reference to a shared span_id — a Link / LinkTo or
+// linkEvent records a reference to a shared span_id — a Link or
 // either half of a message hand-off — on the span the caller was in.
 //
 // Each referenced id becomes an OTel span link, which is the primitive for

@@ -37,12 +37,17 @@ WITH RECURSIVE
   )
 `
 
-// errorEventTypes is the set of event_type values whose EventType.IsError()
-// is true in witness/events.go. Kept in one place so the panels agree.
-const errorEventTypes = "13, 14, 100, 101, 102, 103, 104"
+// errorEventTypes selects the error types from witness.event_types, which
+// the observer upserts from core.Events() at start-up. It is a subquery
+// rather than a list of ids because a program may register its own error
+// types with core.MustNewErrorEventType, and a hardcoded list cannot know
+// about those — the panels used to miss every one of them.
+const errorEventTypes = "SELECT event_type FROM witness.event_types WHERE is_error"
 
 // logEventTypes is log and log:* — what the trace view attaches to a span.
-const logEventTypes = "1, 10, 11, 12, 13, 14, 100, 101, 102, 103, 104"
+// A name test, so custom log types registered at runtime are included too.
+const logEventTypes = "SELECT event_type FROM witness.event_types" +
+	" WHERE event_type_name = 'log' OR event_type_name LIKE 'log:%'"
 
 // shiftPlaceholders renumbers $N -> $N+1 in a WHERE fragment. Needed when a
 // query gains the trace-walk CTE, whose seed must be $1.

@@ -3,26 +3,28 @@ package core
 import (
 	"runtime"
 	"strconv"
-	"strings"
+
 	"sync"
 )
 
-var (
-	callDepth int
-	pcPool    *sync.Pool
-)
+// pcPool holds one-element pc buffers. One element is all Caller ever needs:
+// runtime.Callers applies skip itself, so the frame being reported is the
+// first it writes — the buffer of 16 this used to allocate had every entry
+// but the first thrown away, and paid for walking them.
+var pcPool = sync.Pool{New: func() any { return make([]uintptr, 1) }}
 
-func SetCallDepth(i int) {
-	callDepth = i
-	pcPool = new(sync.Pool)
-	pcPool.New = func() any {
-		return make([]uintptr, callDepth)
-	}
-}
+// callerCache maps a pc to the "file:line" it resolves to. Symbolisation is
+// the expensive half of Caller (runtime.CallersFrames plus building the
+// string) and its answer never changes for a given pc, while the set of
+// distinct pcs is the set of witness call sites in the binary — small,
+// fixed, and reached over and over by a hot loop.
+var callerCache sync.Map // map[uintptr]string
 
-func init() {
-	SetCallDepth(16)
-}
+// SetCallDepth is a no-op.
+//
+// Deprecated: Caller needs exactly one frame, whatever skip is, so there is
+// no depth to configure. It remains so callers that set it still compile.
+func SetCallDepth(int) {}
 
 // Caller reports where user code called into witness.
 //
@@ -31,6 +33,10 @@ func init() {
 // a wrapper that emits on someone else's behalf — every entry point in the
 // witness package — wants 1, so the event is attributed to the line that
 // called the wrapper rather than to the wrapper's own body.
+//
+// The location is resolved once per call site and cached by pc: the walk
+// itself stays (it is what finds the call site) but the symbolisation does
+// not repeat, which is what makes a metric in a hot loop affordable.
 //
 // It is exported because a custom event type is built here in core, so the
 // code emitting one calls core.Context.Observe directly and needs a location
@@ -65,18 +71,20 @@ func Caller(skip int) string {
 	if n == 0 {
 		return ""
 	}
+	if v, ok := callerCache.Load(pc[0]); ok {
+		return v.(string)
+	}
 
-	// CallersFrames does the return-address adjustment and expands inlined
-	// frames; FuncForPC/FileLine on the raw pc does neither, which is why
-	// line numbers used to drift by a build-flags-dependent amount.
-	var frame, _ = runtime.CallersFrames(pc[:n]).Next()
+	var frame, _ = runtime.CallersFrames(pc).Next()
 	if frame.File == "" {
 		return ""
 	}
 
-	var c strings.Builder
-	c.WriteString(frame.File)
-	c.WriteRune(':')
-	c.WriteString(strconv.Itoa(frame.Line))
-	return c.String()
+	var b = make([]byte, 0, len(frame.File)+8)
+	b = append(b, frame.File...)
+	b = append(b, ':')
+	b = strconv.AppendInt(b, int64(frame.Line), 10)
+	var s = string(b)
+	callerCache.Store(pc[0], s)
+	return s
 }

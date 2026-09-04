@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/observers/stdlog"
 	"github.com/imakiri/witness/printers"
@@ -38,16 +39,19 @@ func main() {
 		log.Fatalln("http.NewRequest failed with error:", err)
 	}
 
-	// The send mints the message's span_id and returns it for the carrier.
-	msgID := witness.ExternalMessageSent(ctx, "google request")
+	// The id goes in the carrier, so it is minted before the send; the event
+	// says the hand-off happened, so it is emitted after it.
+	var msgID = uuid.Must(uuid.NewV7())
 	request.Header.Set("X-Message", msgID.String())
 	response, err := client.Do(request)
 	if err != nil {
 		log.Fatalln("client.Do(request) failed with error:", err)
 	}
-	// Both halves reference the same span_id from this process's own span;
-	// neither enters it.
-	witness.ExternalMessageReceived(ctx, msgID, "google response", record.Int("status_code", response.StatusCode))
+	witness.Sent(ctx, msgID, "google request")
+	// The response needs no event of its own: a hand-off is one direction,
+	// and the round trip is this span's own duration. What the response *was*
+	// is a log line.
+	witness.Info(ctx, "google response", record.Int("status_code", response.StatusCode))
 	if response.StatusCode != http.StatusOK {
 		log.Fatalln("client.Do(request) failed with code:", response.StatusCode)
 	}

@@ -97,7 +97,37 @@ func NewObserver(config Config) (*Observer, error) {
 		return nil, fmt.Errorf("failed to ping the database: %w", err)
 	}
 
+	if err = syncEventTypes(ctx, pool); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("failed to sync event types: %w", err)
+	}
+
 	return newObserver(config, pool, int(config.Database.MaxConns)), nil
+}
+
+// syncEventTypes upserts every registered core.EventType into
+// witness.event_types, so SQL can name a type and tell an error from a
+// non-error without a hardcoded list.
+//
+// It runs once, at construction, because that is the only moment the set is
+// both complete and stable: MustNewEventType appends to the same registry at
+// runtime, and types registered after this call are not written. Register
+// custom types in init().
+func syncEventTypes(ctx context.Context, conn connection) error {
+	var types = core.Events()
+	if len(types) == 0 {
+		return nil
+	}
+	var batch = new(pgx.Batch)
+	for _, t := range types {
+		batch.Queue(`INSERT INTO witness.event_types (event_type, event_type_name, is_error)
+                     VALUES ($1, $2, $3)
+                     ON CONFLICT (event_type) DO UPDATE
+                     SET event_type_name = excluded.event_type_name,
+                         is_error        = excluded.is_error`,
+			t.Value(), t.String(), t.IsError())
+	}
+	return conn.SendBatch(ctx, batch).Close()
 }
 
 // newObserver builds and starts an Observer with a pre-built connection and

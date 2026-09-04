@@ -15,16 +15,10 @@ func TestEventsRegistryIsExhaustive(t *testing.T) {
 	var all = []EventType{
 		EventTypeLog(), EventTypeSpanLink(), EventTypeMetric(),
 		EventTypeLogDebug(), EventTypeLogInfo(), EventTypeLogWarn(),
-		EventTypeLogError(), EventTypeLogFatal(),
-		EventTypeLogErrorInternal(), EventTypeLogErrorExternal(),
-		EventTypeLogErrorDevice(), EventTypeLogErrorStorage(),
-		EventTypeLogErrorNetwork(),
+		EventTypeLogError(), EventTypeLogFatal(), EventTypeLogPanic(),
 		EventTypeSpanStart(), EventTypeSpanFinish(),
 		EventTypeSpanInstanceOnline(), EventTypeSpanInstanceOffline(),
-		EventTypeSpanServiceStart(), EventTypeSpanServiceFinish(),
-		EventTypeSpanWorkerStart(), EventTypeSpanWorkerFinish(),
-		EventTypeSpanInternalMessageSent(), EventTypeSpanInternalMessageReceived(),
-		EventTypeSpanExternalMessageSent(), EventTypeSpanExternalMessageReceived(),
+		EventTypeSpanMessageSent(), EventTypeSpanMessageReceived(),
 		EventTypeMetricGauge(), EventTypeMetricCounter(), EventTypeMetricHistogram(),
 	}
 	var registered = Events()

@@ -100,7 +100,7 @@ func TestErrorSetsStatus(t *testing.T) {
 	o.Observe(core.Event{
 		SpanIDs:      []uuid.UUID{root, span},
 		EventID:      uuid.Must(uuid.NewV7()),
-		EventType:    core.EventTypeLogErrorNetwork(),
+		EventType:    core.EventTypeLogPanic(),
 		EventMessage: "upstream unreachable",
 		Records:      []core.Record{errRecord{msg: "connection refused"}},
 	})

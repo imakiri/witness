@@ -61,7 +61,7 @@ func main() {
 			// never opens a span another one owns. Both sides emit events
 			// carrying it, so one query on it reconnects them.
 			if upstreamSpanID, ok := propagation.Extract(r.Header); ok {
-				witness.ExternalMessageReceived(ctx, upstreamSpanID, "POST /compute")
+				witness.Received(ctx, upstreamSpanID, "POST /compute")
 			}
 
 			compute(ctx)

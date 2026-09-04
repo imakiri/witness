@@ -13,6 +13,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/core"
 	"github.com/imakiri/witness/observers/postgres"
@@ -62,7 +63,7 @@ func main() {
 			// never opens a span another one owns. Both sides emit events
 			// carrying it, so one query on it reconnects them.
 			if upstreamSpanID, ok := propagation.Extract(r.Header); ok {
-				witness.ExternalMessageReceived(ctx, upstreamSpanID, "POST /work")
+				witness.Received(ctx, upstreamSpanID, "POST /work")
 			}
 
 			handle(ctx)
@@ -102,7 +103,7 @@ func callServiceC(ctx context.Context, client *http.Client, url string) {
 		witness.Error(ctx, "build request service-c", err)
 		return
 	}
-	msgID := witness.ExternalMessageSent(ctx, "POST service-c /compute (from B)", record.String("url", url))
+	var msgID = uuid.Must(uuid.NewV7())
 	propagation.Inject(req.Header, msgID)
 
 	resp, err := client.Do(req)
@@ -110,8 +111,10 @@ func callServiceC(ctx context.Context, client *http.Client, url string) {
 		witness.Error(ctx, "call service-c", err)
 		return
 	}
+	// Emitted after the call succeeded: a send that failed handed nothing off.
+	witness.Sent(ctx, msgID, "POST service-c /compute (from B)", record.String("url", url))
 	resp.Body.Close()
-	witness.ExternalMessageReceived(ctx, msgID, "response from service-c",
+	witness.Info(ctx, "response from service-c",
 		record.Int("status", resp.StatusCode))
 }
 

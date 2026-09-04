@@ -53,8 +53,8 @@ README has the full data-model rationale and example tables; read it before chan
 
 Two packages in the root module, split by audience:
 
-- **`witness`** (root) — the call API and nothing else: `Info`/`Warn`/`Debug`/`Error*`, `Span`/`Service`/`Worker`/`SpanStart`/`SpanFinish`, `Instance`/`Test`, `Link`/`LinkTo`, `*Message{Sent,Received}`. 27 functions plus three aliases (`Record`, `EventType`, `Finish`) so its own signatures read without a second import. It declares no types of its own.
-- **`witness/core`** — the data model and plumbing: `Context` (+ `With`/`From`/`To`), `Event`, `Observer`/`NilObserver`, `EventType` and its 28 constructors and registry, `SpanFlags`, `Record`, `Printer`/`Appender`/`PrintFlags`, `Caller`/`SetCallDepth`.
+- **`witness`** (root) — the call API and nothing else: `Info`/`Warn`/`Debug`/`Error`/`ErrorRF`/`ErrorOrInfo`/`Fatal`/`Panic`, `Span`/`SpanStart`/`SpanFinish`, `Instance`/`Test`, `Link`, `Sent`/`Received`/`ReceivedAll`, `Handle`/`HandleAll`, `Count`/`Gauge`/`Sample`. 22 functions plus three aliases (`Record`, `EventType`, `Finish`) so its own signatures read without a second import. It declares no types of its own.
+- **`witness/core`** — the data model and plumbing: `Context` (+ `With`/`From`/`To`), `Event`, `Observer`/`NilObserver`, `EventType` and its 18 constructors and registry, `SpanFlags`, `Record`, `Printer`/`Appender`/`PrintFlags`, `Caller`/`SetCallDepth`.
 
   There is deliberately **no `witness.Observe`** for custom event types. It took a `core.EventType`, which only `core` can produce, so the caller already imported `core` and the wrapper bought nothing. Emit one directly:
 
@@ -94,11 +94,11 @@ Consequence worth knowing: most observers no longer import `witness` at all — 
   **A witness call does one of four things:**
 
     1. Emit a point event in the current span (`Info`, `Error`, `Observe`, metrics) — chain untouched.
-    2. Open a child (`Span`/`Service`/`Worker`/`SpanStart`) — appends, returns a Context whose current span is the new
+    2. Open a child (`Span`/`SpanStart`/`Handle`) — appends, returns a Context whose current span is the new
        one.
     3. Replace the chain with a fresh instance root (`Instance`/`Test`) — the *only* constructors, and they ignore any
        witness state on the incoming ctx entirely.
-    4. Reference a foreign span without entering it (`Link`/`LinkTo`, the message helpers) — appended to that one event
+    4. Reference a foreign span without entering it (`Link`, the message helpers) — appended to that one event
        *after* the chain with `SpanFlagLink` and nothing else; the Context is unchanged.
 
   **A process never enters a span another process opened.** Two processes writing start/finish into one span_id
@@ -120,13 +120,21 @@ Consequence worth knowing: most observers no longer import `witness` at all — 
 - **`EventType`** (`core/events.go`) — `(errorFlag, int64, string)` triple. All built-in types are
   functions (`EventTypeLogInfo()`, `EventTypeSpanStart()`, …) that must *also* be listed in the package-level `events`
   slice; `Events()` returns a copy of it and is what type-filtering observers and column-width calculations read. **A
-  built-in type missing from `events` is a type those consumers silently drop** — that bug hid `span:wait_group:*` and
-  every `metric:*` from `stdlog`. `MustNewEventType` / `MustNewErrorEventType` append to the same slice at registration
+  built-in type missing from `events` is a type those consumers silently drop** — that bug hid every `metric:*` from `stdlog`. `MustNewEventType` / `MustNewErrorEventType` append to the same slice at registration
   time; the second sets the error flag, which is what routes an event to `stdlog`'s error writer and
   trips `test.WithFailOnError`. Both panic on an `i` already registered — `EventTypesCompare` orders on `i` alone, so a
   collision would make a type filter's binary search match the wrong type. The `i` range `(-1000, +1000)` is reserved;
   custom types must use `MustNewEventType` with `|i| >= 1000` and a name ≤128 runes. By convention paired start/finish
   use opposite-sign codes (e.g. `+20`/`-20`).
+- **`EventTypeFilter`** (`core/observer.go`) — optional interface on an Observer: `Accepts(EventType) bool`, consulted
+  by `Context.Wants` **before an event is built**, i.e. before the stack walk, the uuid and the records slice. A
+  declined event costs ~12 ns and zero allocations instead of ~290; an Observer that does not implement it accepts
+  everything (the only safe default — a guessing filter drops data silently). `NilObserver` declines everything, so a
+  ctx with no witness state is free. `multi` accepts if *any* member does, which is worth knowing before wondering why
+  a filter downstream saved nothing: one unfiltered member makes the fan-out unfiltered. `stdlog` answers from
+  `WithTypes`; `prometheus` takes metric types only. The hot entry points (`Info`/`Warn`/`Debug`, `Count`/`Gauge`/
+  `Sample`) check it first; correctness does not depend on that — `Context.ObserveLinked` checks again, so an observer
+  that declines a type never sees it whatever the call path.
 - **`Printer` / `Appender` / `PrintFlags`** (`core/printer.go`) — rendering is decoupled from transport. An observer that
   writes text takes a `Printer` (`Print(io.Writer, Event, PrintFlags)`) or
   an `Appender` (`Append([]byte, Event, PrintFlags) []byte`) and a `PrintFlags` bitmask selecting which columns to
@@ -134,7 +142,7 @@ Consequence worth knowing: most observers no longer import `witness` at all — 
   columns, widths grown under a mutex as events arrive) and `printers.JSON`.
 - **`propagation`** (`propagation/`, in the root module) — W3C `traceparent` `Inject`/`Extract` over
   an `http.Header`. `Inject` takes one span_id and puts it whole into the traceparent's 16-byte trace-id field (witness
-  has no trace_id to spend there), so `Extract` recovers the exact uuid; feed it into `LinkTo` or a `*MessageReceived`
+  has no trace_id to spend there), so `Extract` recovers the exact uuid; feed it into `Link` or a `*MessageReceived`
   inside the request's own span — the upstream span is referenced, never entered. `observers/otlp/propagation.go` is a
   deprecated shim over this.
 - **`Record`** (`core/record.go`, and module `record/`) — interface (`AppendKey`, `AppendValue`, `KeyEqual`). The
@@ -148,14 +156,42 @@ Consequence worth knowing: most observers no longer import `witness` at all — 
   before the span; returns ctx + `Finish`) / `SpanFinish` (closes a span by id when start and finish are not lexically
   paired), `Instance` (root span representing a process lifetime — **call it once, at process start**; with `Test`, the
   *only* way to construct a `Context`. An inbound request is an ordinary `Span` under the instance which then
-  *references* the upstream span_id with `LinkTo` or `*MessageReceived`), `Test` (`Instance` bound to a `testing.TB`,
-  named `tb.Name()`, versioned `"test"`), `Service`/`Worker` (named long-running or concurrent sub-spans), and `Link` (
-  mints a shared span_id, emits `span:link`, returns the id for the carrier) / `LinkTo` (references one that arrived),
-  and `InternalMessage{Sent,Received}` / `ExternalMessage{Sent,Received}` — the same pair with message event
-  types; `*Sent` mints and returns the msgID, `*Received` takes it. Emit `*Received` inside the span that handles the
-  message.
-- **`caller`** (`core/caller.go`) — attaches the source location of the witness call to every event, as `file:line`. Uses
-  a sync.Pool of PC slices sized by `SetCallDepth` (default 16). `Caller(skip)` counts frames above its own caller:
+  *references* the upstream span_id with `Received`), `Test` (`Instance` bound to a `testing.TB`,
+  named `tb.Name()`, versioned `"test"`), and `Link` (
+  relates a caller-supplied span_id to this span, emitting `span:link`; both sides of a hand-off call it with the same
+  id),
+  and `Sent` / `Received` / `ReceivedAll` — the same pair with message event types. Both take the msgID: it must exist
+  before the send (it travels in the carrier), so the caller mints it, and the event says the hand-off *happened*, so
+  emit `Sent` after the send succeeded. Emit `Received` inside the span that handles the message. There is **no
+  internal/external split** — it was two event types nothing ever distinguished; a peer outside the system is a record,
+  not a type. `Handle` / `HandleAll` are `Span` + `Received` / `ReceivedAll` in one call: a child span for the work the
+  message triggered, with the message recorded inside it, so the received half cannot land on a span that outlives the
+  work.
+
+  **A hand-off is one direction and has no reply half.** One side gives (`Link` before the send, `Sent` after it), the
+  other takes (`Received`, or `Handle`). An answer travelling back is another hand-off with its own id — and for a
+  synchronous call it is no event at all: the round trip is the calling span's own duration, which is why `Request`-
+  shaped sugar for the calling side was considered and dropped. The reply event types that briefly existed
+  (`*_message:replied` / `:reply_received`, ±26/±27) are gone: they existed only to stop a caller's inbound reply from
+  reading as "someone triggered this span" — and a caller that emits nothing on the way back cannot have that problem
+  in the first place.
+- **Test attribution: `tb.Helper()` must be written in the frame you want skipped.** `testing.TB.Helper` marks the
+  function that *calls* it, so a wrapper — `func (c Context) Helper() { c.t.Helper() }` — marks only itself and leaves
+  every caller looking like the origin. That was the bug: with a real `witness.Test` context, every `t.Logf` from an
+  observer pointed at `core/context.go` instead of the test's own line. **Inlining does not help** — verified:
+  `gcflags=-m` reports the wrapper inlined and the attribution still lands on the wrapper's body, because
+  `runtime.CallersFrames` expands inline frames and `testing` matches on the logical function. So `core.Context.TB()`
+  returns the `testing.TB` and each frame writes its own `if tb := c.TB(); tb != nil { tb.Helper() }`: every entry
+  point, every `Finish` closure, `instance`, `Context.Observe`, `Context.ObserveLinked`, plus the observer's own
+  `Observe`. `TestHelperAttribution` guards it by running `go test -v` on `internal/helperprobe` and checking every
+  line points at the probe file — it cannot be checked in-process, since `testing.TB` is unimplementable outside
+  `testing`.
+- **`caller`** (`core/caller.go`) — attaches the source location of the witness call to every event, as `file:line`.
+  Walks exactly **one** frame (`runtime.Callers` applies `skip` itself, so everything past the first entry was always
+  discarded) and caches `file:line` by pc in a `sync.Map`, because symbolisation is the expensive half and its answer
+  never changes for a given pc. That took `Caller` from 527 ns / 4 allocs to ~140 ns / 1 alloc, which matters because
+  it was 99% of the cost of a witness call — see `bench_test.go`. `SetCallDepth` is a deprecated no-op; there is no
+  depth to configure. `Caller(skip)` counts frames above its own caller:
   **0 is the line on which `Caller` is written, 1 is that line's caller.** Every entry point in `witness` passes 1,
   because it reports on someone else's behalf; code emitting an event directly passes 0. Getting this backwards
   attributes the event one frame too high and the mistake is invisible until `TestCallers` runs.
@@ -181,7 +217,7 @@ Consequence worth knowing: most observers no longer import `witness` at all — 
     - It uses `runtime.CallersFrames`, never `FuncForPC`/`FileLine` on a raw pc: only `CallersFrames` does the
       return-address adjustment and expands inlined frames. Without it the line drifts by a build-flags-dependent
       amount.
-    - The `Finish` closures returned by `Span`/`Service`/`Worker`/`SpanStart`/`Instance`/`Test` do **not** walk the
+    - The `Finish` closures returned by `Span`/`SpanStart`/`Handle`/`HandleAll`/`Instance`/`Test` do **not** walk the
       stack. Each constructor captures its own call site eagerly into `at` and the closure reuses it, so a span's start
       and finish events report the same line — the line that opened the span. (`Test` delegates to the
       unexported `instance`, which takes `at` as a parameter for exactly this reason.)
@@ -215,7 +251,7 @@ Each observer is its own Go module so users only pull in the dependencies they a
   file's header comment. A schema change means a new numbered pair *and* the Grafana views together; `postgres_test.go`
   embeds `000_schema.up.sql`, so a rename breaks the integration tests. The Grafana monitor's views, plugin
   queries and dashboard were rebuilt on `span_flags` in the same release — see below.
-- **`prometheus`** — declarative: counters and histograms must be pre-declared in `Config`. Events whose `eventMessage`
+- **`prometheus`** — declarative: counters, gauges and histograms must be pre-declared in `Config`. Events whose `eventMessage`
   doesn't match a configured metric name are silently dropped. The `value` record is the delta/observation; other
   records are matched against `LabelKeys`. Exposes `.Handler()` for the `/metrics` endpoint.
 - **`otlp`** — exports witness events as OpenTelemetry spans over OTLP (gRPC or HTTP) to a collector. Maintains
@@ -244,9 +280,24 @@ Each observer is its own Go module so users only pull in the dependencies they a
 - `span_children` states the parent outright via `span_flags & 2` on the child's start event. **The old
   "latest-started co-occurring span" heuristic is gone — do not bring it back.**
 - `span_links` / `link_edges` replace `cross_service_edges`. A cross-process hop is an ordinary link row, so nothing
-  special-cases it.
-- `trace_roots` is the UI's handle on a trace: an entry-point span (its parent is an instance) carrying no inbound
-  `*_message:received`. Exactly one per distributed request, on the originating side.
+  special-cases it — and neither is an **in-process** one: `link_edges` joins the two halves on the shared link_span_id
+  and takes its direction from the event_type sign alone. It deliberately does *not* require the two sides to be
+  different instances; that predicate added no direction and disconnected every in-process queue (a request span
+  enqueues, a worker span dequeues) from the trace walk. Self-loops (one span on both sides) are excluded, and the
+  service-map edge query drops same-service edges so an in-process hop is not drawn as a service calling itself.
+- `trace_roots` is the UI's handle on a trace: an entry-point span (its parent is an instance) that no one else
+  *triggered*, i.e. one with no inbound `span:message:received` (-24) in `span_link_sides`. A span that only gave work
+  away is a root; a span that took work is not. This rule is only safe because **a hand-off has no reply half** — a
+  caller emits nothing on the way back, so it never reads as triggered by its own callee. Earlier attempts to allow a
+  reply (comparing "sent before received", then a dedicated pair of reply event types) both existed solely to work
+  around that, and both went away with the reply itself.
+- **A long-lived worker span is also a root** — parent is the instance, nothing triggered it — so a batching process
+  shows one extra traces row whose walk fans out into every batch it ever ran. So is a span sitting under an instance
+  that never emitted a start (only events, or only a finish): it is a span like any other, and nothing triggered it
+  either. Known and accepted: the data is right,
+  and every discriminator tried (exclude a root whose subtree receives) also excludes real entry points. Filter it in
+  the panel by name if it bothers you.
+
 - **A trace is walked at query time**, seeded from a root — `traceWalkCTE` in `plugin/pkg/queries/walk.go`, mirrored in
   the dashboard's raw SQL. The walk is **directed** (parent→child, sender→receiver). Plain co-occurrence over
   `witness.spans` would merge a whole process into one component, because the instance span sits in every one of its
@@ -254,8 +305,11 @@ Each observer is its own Go module so users only pull in the dependencies they a
 - The plugin's request types keep `traceID` as an alias for `rootSpanID`, so saved dashboards and links keep working.
 - The dashboard variable is still named `selected_trace`; it now holds a root span_id.
 
-The `event_type_names` view mirrors the integer constants in `events.go` — if you add or change a built-in event type,
-update both.
+`event_type_names` is a view over `witness.event_types`, a table the postgres observer upserts from `core.Events()`
+at start-up — names and the error flag live in Go and are copied in, so custom types registered with
+`MustNewEventType` are named in SQL too. Nothing here may hardcode a list of ids again: the plugin's
+`errorEventTypes`/`logEventTypes` are subqueries over that table for the same reason. A type registered *after* the
+observer is built is not in the table — register custom types in `init()`.
 
 The plugin lives outside the workspace: `GOWORK=off go build ./...`. Its queries are SQL strings, so nothing but
 running them catches a renamed view — `pkg/queries/queries_test.go` is that check. It seeds a two-service trace in pure
@@ -292,6 +346,23 @@ split.
   closures: `defer finish(record.Int("j", j))` evaluates its arguments *at the defer statement*, capturing pre-return
   values. Always write `defer func() { finish(record.Int("j", j)) }()` when the record depends on the result.
 
+- **Events are independent. Nothing may require that two of them exist, or that they arrived in order.** This is the
+  model's central asymmetry with span-based tracing, and every layer has to hold it:
+    - A span may have a `start` and no `finish` (process died, span still open), a `finish` and no `start` (ingestion
+      began mid-flight, the writer was down, the batch carrying it was dropped), **or neither while still carrying
+      events of its own**. `witness.span_pairs` therefore takes its universe from `witness.spans` — every span that
+      owns an event — and treats lifecycle events as optional decoration; `span_children` reads parenthood off *any*
+      event of the child, since every event carries the whole chain; `span_instances` places a span in a process from
+      any one of its events. Three views assumed "a span starts" independently and all three had to be rewritten —
+      re-check the assumption before adding a fourth.
+    - Order is not guaranteed either: a hand-off's `sent` is legitimately written *after* the matching `received`
+      (emitting it only once the broker acked is the correct thing to do), and an event may be delayed arbitrarily.
+      **Never infer a role, a direction or a pairing from timestamps** — the event type says which side of a hand-off
+      a span is on (`span:link` 2 and `span:message:sent` 24 give, `span:message:received` -24 takes) and that is the
+      only thing that may. `link_edges` may report `to_at < from_at`; that means "cannot say", not "negative".
+    - Consequence for observers: `observers/otlp` can only attach to a span it saw start, so a finish or a log event
+      for an unknown span_id is dropped (it checks the registry and returns) — correct for OTel, whose model has no
+      such span, and worth remembering when otlp output looks thinner than Postgres.
 - Span identity is a uuid v7 — keep using `uuid.Must(uuid.NewV7())` so identifiers are time-sortable.
 - A span is a *point* in the space dimension, not a duration. `span:*:start` / `span:*:finish` are just two events
   sharing a span_id; duration is reconstructed at query time. Don't bake duration into the data model.
@@ -300,9 +371,56 @@ split.
 - Roles are derived, never stored. If you find yourself wanting to persist what a span *is* on the `Context`, check
   whether position already says it — `SpanFlagInstance` used to be a stored bool and `SpanFlagLink` a stored per-span
   flag; both turned out to be derivable once the model was tightened.
+- **Fan-in is a link set, not a merged chain.** A batch worker handling n requests emits **one**
+  `witness.ReceivedAll(ctx, msgIDs, ...)` in a span opened for the batch: the event carries the worker's
+  chain plus n `SpanFlagLink` ids. Do not re-link every subsequent event (rows × n for no query power), do not fan in an
+  event about a single item, and do not give the long-lived worker span the links — put them on a per-batch child span,
+  or every request's trace walk drags in the worker's whole history. `core.ObserveLinked` takes the slice; the plural
+  helper is `ReceivedAll`. See `examples/batch` and `TestBatchFanIn` in `witness_test.go`.
+- **Emit `Sent` after the send succeeded, not before.** Mint the id (`uuid.Must(uuid.NewV7())`), put it in the
+  carrier, send, and emit on success — a failed attempt is an error event in the caller's span, not a link nobody will
+  ever answer. The old mint-and-emit `InternalMessageSent` could only fire before the send, which is why it is gone. Retries reuse the same msgID and add an `attempts` record
+  rather than minting one id per attempt: at-least-once delivery then still draws one edge, and `link_edges` (built on
+  `span_link_sides`, one row per pair of spans) dates it from the *first* attempt, so it measures the whole wait.
+  A dangling link — sent, never received — is harmless by construction: it yields no `link_edges` row, so the walk
+  stops there, and `trace_roots` only looks at inbound receives. It is still a row per attempt in `witness.spans`,
+  which is the reason not to mint a fresh id per retry.
+- **There is one kind of span.** `witness.Service` / `witness.Worker` and their event types (22 `span:service:*`,
+  23 `span:wait_group:*` — note the name never matched the function) are gone. Nothing branched on them: `otlp` routed
+  both through the same start/finish handlers and the views matched the whole 20..23 range, so the only difference was
+  a string the span's *name* already carries. "Service" was worse than redundant — in this model the service **is** the
+  instance span at the head of the chain, the one `instances` names, not a child span below it. A program wanting
+  machine-readable span kinds registers a paired custom type (`MustNewEventType`, `|i| >= 1000`, ±) — the views accept
+  that range and `witness.event_types` names it.
+- **There is no reply half.** A hand-off goes one way: one side gives, the other takes, and an answer is either
+  another hand-off with its own id or no event at all — for a synchronous call the round trip is the calling span's
+  own duration, which is cheaper and truer than any pair of events. Do not reintroduce a reply: it makes the caller's
+  span read as triggered by its callee, and every fix for that (timestamp order, dedicated reply types) has been tried
+  and removed. Note also that two spans calling `Link` on one id draw no edge — both emit type 2, and an edge needs a
+  taking half (-24).
+- **`span:link` (2) is the *sending* side.** `span_link_sides` counts it in `sent_at`, which makes `Link` the way to
+  say "about to hand this id off": emit it before the send (`Sent` belongs after), and the edge to whoever calls
+  `Received` exists even if the process dies mid-send — the price is a link with no receiving half when the send never
+  happened (`SELECT * FROM witness.span_link_sides WHERE sent_at IS NOT NULL AND received_at IS NULL` finds them).
+  The corollary is a trap worth stating: **the receiving side of a message must call `Received`, never `Link`**, or it
+  is read as a second sender.
 - Propagation is transport-agnostic by design: the sender puts a span_id into whatever carrier it has (HTTP header,
   message envelope, gRPC metadata), the receiver *references* it from inside its own span
-  with `LinkTo` / `*MessageReceived`. Nothing in `witness` should know about specific transports.
+  with `Link` / `Received`. Nothing in `witness` should know about specific transports.
+- **Metrics are events like everything else.** `Count` (delta), `Gauge` (absolute value now) and `Sample` (one
+  observation of a distribution) emit `metric:counter` / `metric:gauge` / `metric:histogram`, with the metric name in
+  `EventMessage` and the number in a record keyed `value`, placed **first** so an observer taking the first `value`
+  record gets the API's number rather than a label the caller happened to name that. `Sample` is deliberately not
+  called `Observe` (taken by the observer contract) or `Histogram` (that is the aggregate, not the event) — witness
+  emits one sample and leaves bucketing, rates and quantiles to whatever reads them.
+
+  **There is no in-process aggregation**, and adding one is a bigger decision than it looks: the premise of the model
+  is that every metric, log line and span boundary is the same kind of object, and a pre-aggregated counter is not an
+  event — it has no single date, no caller, no span. `observers/prometheus` already aggregates client-side, Postgres
+  aggregates in SQL. For a call site too hot for one event per increment, in order: let the observer decline the type
+  (`EventTypeFilter`, ~12 ns), batch at the call site (`Count(ctx, name, 100)` is one event for a hundred increments),
+  and only then consider a counter registry in `core`. One emitted metric event costs ~290 ns and 5 allocations, so a
+  million increments a second is about a third of a core — measure against that before designing anything.
 - Records are append-only key/value pairs where the value is rendered through `AppendValue([]byte)` rather
   than `String()` — this lets implementations stream into a caller-provided buffer with no allocation. New `Record`
   implementations should follow the same pattern.
@@ -338,10 +456,6 @@ the time of writing; re-check before acting.
   record_key)`, `record_key` nullable, every value stored as text —
   `observers/prometheus` parses the `value` record back to float on every
   event, and SQL-side aggregation over metric values needs a cast.
-- **No `event_types` table.** Names live in Go and are re-mirrored by hand in
-  the `event_type_names` view; types registered at runtime via
-  `MustNewEventType` never reach Postgres at all, so a SQL consumer cannot name
-  them. An upsert at observer start would close both.
 - **No retention or partitioning.** Append-only, three tables growing linearly,
   `records` fastest.
 
@@ -356,10 +470,9 @@ the time of writing; re-check before acting.
   direction.
 - **Dead or half-wired types.** `EventTypeLog()` (1) and `EventTypeMetric()` (3)
   are registered and never emitted — they are categories dressed as types.
-  `EventTypeLogFatal()` (14) and `EventTypeLogErrorDevice()` (102) have no entry
-  point in `witness.go`. `EventTypeMetricGauge()` (30) is registered but
-  `observers/prometheus` switches only on Counter and Histogram, so a gauge
-  event is silently dropped by the only observer that consumes metrics.
+  `EventTypeMetricGauge()` (30) is registered but
+  every observer that consumes metrics handles all three of gauge, counter
+  and histogram.
 - **`mustNewEventType` appends to the package-level `events` slice without a
   lock** while `Events()` and `printers.Pretty`'s width growth read it. Safe
   only if registration happens in `init()`; nothing enforces that.

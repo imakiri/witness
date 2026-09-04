@@ -31,7 +31,7 @@ import (
 //  3. Open a root: Instance, Test. Replaces the chain with a single fresh
 //     span. Nothing sits above an instance, and these are the only
 //     constructors — a Context cannot be built any other way.
-//  4. Reference a foreign span without entering it: Link, LinkTo and the
+//  4. Reference a foreign span without entering it: Link and the
 //     message helpers. The span is appended to that one event *after* the
 //     chain, flagged SpanFlagLink and nothing else; the Context is
 //     unchanged.
@@ -84,13 +84,24 @@ func NewInstance(tb testing.TB, observer Observer) Context {
 	}
 }
 
-// Helper marks the calling function as a test helper when this Context was
-// built by witness.Test, so a failure points at the test's own line. A no-op
-// otherwise.
-func (c Context) Helper() {
-	if c.t != nil {
-		c.t.Helper()
-	}
+// TB returns the test that owns this Context, or nil.
+//
+// It exists so that a frame between the test and the failure can mark
+// *itself* as a helper:
+//
+//	if tb := c.TB(); tb != nil {
+//		tb.Helper()
+//	}
+//
+// That shape is not decoration. testing.TB.Helper marks the function that
+// calls it, so a `func (c Context) Helper() { c.t.Helper() }` wrapper marked
+// only itself and left every frame that called it — every witness entry
+// point, Observe, ObserveLinked — looking like the origin of the event. A
+// t.Logf from an observer was attributed to core/context.go rather than to
+// the test's own line. The call has to be written in each frame that should
+// be skipped; there is no way to mark a frame from inside a callee.
+func (c Context) TB() testing.TB {
+	return c.t
 }
 
 // WithChildSpan returns a Context whose chain has spanID appended as the new
@@ -111,6 +122,14 @@ func (c Context) WithChildSpan(spanID uuid.UUID) Context {
 		observer: c.observer,
 		spanIDs:  append(slices.Clone(c.spanIDs), spanID),
 	}
+}
+
+// Wants reports whether this Context's observer will do anything with an
+// event of this type — see EventTypeFilter. Entry points call it before
+// doing the work of building an event, in particular before Caller walks the
+// stack, which is the expensive part.
+func (c Context) Wants(eventType EventType) bool {
+	return Accepts(c.observer, eventType)
 }
 
 func (c Context) IsNil() bool {
@@ -172,7 +191,9 @@ func (c Context) CurrentSpanID() uuid.UUID {
 // invited two events to claim the same identity or an event to claim a
 // time its own process never saw.
 func (c Context) Observe(eventType EventType, eventName string, eventCaller string, records ...Record) {
-	c.Helper()
+	if c.t != nil {
+		c.t.Helper()
+	}
 	c.ObserveLinked(nil, eventType, eventName, eventCaller, records...)
 }
 
@@ -183,10 +204,12 @@ func (c Context) Observe(eventType EventType, eventName string, eventCaller stri
 // event violates the unique (event_id, span_id) index in Postgres, which,
 // because the observer batches, would discard every event queued with it.
 func (c Context) ObserveLinked(links []uuid.UUID, eventType EventType, eventName string, eventCaller string, records ...Record) {
-	if c.observer == nil {
+	if !c.Wants(eventType) {
 		return
 	}
-	c.Helper()
+	if c.t != nil {
+		c.t.Helper()
+	}
 	var spanIDs = c.spanIDs
 	if len(links) > 0 {
 		spanIDs = slices.Clone(c.spanIDs)
