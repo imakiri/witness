@@ -16,7 +16,7 @@ import (
 	"fmt"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/core"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -57,37 +57,37 @@ func (o *Observer) Shutdown(ctx context.Context) error {
 	return o.provider.Shutdown(ctx)
 }
 
-func (o *Observer) Observe(event witness.Event) {
+func (o *Observer) Observe(event core.Event) {
 	switch event.EventType {
-	case witness.EventTypeSpanStart(),
-		witness.EventTypeSpanServiceStart(),
-		witness.EventTypeSpanWorkerStart(),
-		witness.EventTypeSpanInstanceOnline():
+	case core.EventTypeSpanStart(),
+		core.EventTypeSpanServiceStart(),
+		core.EventTypeSpanWorkerStart(),
+		core.EventTypeSpanInstanceOnline():
 		o.startSpan(event)
 
-	case witness.EventTypeSpanFinish(),
-		witness.EventTypeSpanServiceFinish(),
-		witness.EventTypeSpanWorkerFinish(),
-		witness.EventTypeSpanInstanceOffline():
+	case core.EventTypeSpanFinish(),
+		core.EventTypeSpanServiceFinish(),
+		core.EventTypeSpanWorkerFinish(),
+		core.EventTypeSpanInstanceOffline():
 		o.finishSpan(event)
 
-	case witness.EventTypeLogInfo(),
-		witness.EventTypeLogWarn(),
-		witness.EventTypeLogDebug():
+	case core.EventTypeLogInfo(),
+		core.EventTypeLogWarn(),
+		core.EventTypeLogDebug():
 		o.addEvent(event)
 
-	case witness.EventTypeLogError(),
-		witness.EventTypeLogErrorStorage(),
-		witness.EventTypeLogErrorNetwork(),
-		witness.EventTypeLogErrorExternal(),
-		witness.EventTypeLogErrorInternal():
+	case core.EventTypeLogError(),
+		core.EventTypeLogErrorStorage(),
+		core.EventTypeLogErrorNetwork(),
+		core.EventTypeLogErrorExternal(),
+		core.EventTypeLogErrorInternal():
 		o.recordError(event)
 
-	case witness.EventTypeSpanLink(),
-		witness.EventTypeSpanInternalMessageSent(),
-		witness.EventTypeSpanExternalMessageSent(),
-		witness.EventTypeSpanInternalMessageReceived(),
-		witness.EventTypeSpanExternalMessageReceived():
+	case core.EventTypeSpanLink(),
+		core.EventTypeSpanInternalMessageSent(),
+		core.EventTypeSpanExternalMessageSent(),
+		core.EventTypeSpanInternalMessageReceived(),
+		core.EventTypeSpanExternalMessageReceived():
 		o.linkEvent(event)
 	}
 }
@@ -101,7 +101,7 @@ func (o *Observer) Observe(event witness.Event) {
 // fallback is the positional answer, used for events with no SpanFlags at
 // all — hand-built ones from tests or third-party producers, which never
 // carry links either.
-func byFlag(event witness.Event, flag witness.SpanFlags, fallback int) (uuid.UUID, bool) {
+func byFlag(event core.Event, flag core.SpanFlags, fallback int) (uuid.UUID, bool) {
 	if len(event.SpanFlags) == len(event.SpanIDs) {
 		for i, f := range event.SpanFlags {
 			if f&flag != 0 {
@@ -116,39 +116,39 @@ func byFlag(event witness.Event, flag witness.SpanFlags, fallback int) (uuid.UUI
 	return event.SpanIDs[fallback], true
 }
 
-func currentSpanID(event witness.Event) (uuid.UUID, bool) {
-	return byFlag(event, witness.SpanFlagOwn, len(event.SpanIDs)-1)
+func currentSpanID(event core.Event) (uuid.UUID, bool) {
+	return byFlag(event, core.SpanFlagOwn, len(event.SpanIDs)-1)
 }
 
-func parentSpanID(event witness.Event) (uuid.UUID, bool) {
-	return byFlag(event, witness.SpanFlagParent, len(event.SpanIDs)-2)
+func parentSpanID(event core.Event) (uuid.UUID, bool) {
+	return byFlag(event, core.SpanFlagParent, len(event.SpanIDs)-2)
 }
 
 // linkedSpanIDs are the spans this event references without being inside
 // them — the shared point of a hand-off. OTel models that as a span link,
 // not as parentage: the peer's half is the same span seen from the other
 // side, not one above ours.
-func linkedSpanIDs(event witness.Event) []uuid.UUID {
+func linkedSpanIDs(event core.Event) []uuid.UUID {
 	if len(event.SpanFlags) != len(event.SpanIDs) {
 		return nil
 	}
 	var out []uuid.UUID
 	for i, f := range event.SpanFlags {
-		if f&witness.SpanFlagLink != 0 {
+		if f&core.SpanFlagLink != 0 {
 			out = append(out, event.SpanIDs[i])
 		}
 	}
 	return out
 }
 
-func rootSpanID(event witness.Event) (uuid.UUID, bool) {
+func rootSpanID(event core.Event) (uuid.UUID, bool) {
 	if len(event.SpanIDs) == 0 {
 		return uuid.Nil, false
 	}
 	return event.SpanIDs[0], true
 }
 
-func (o *Observer) startSpan(event witness.Event) {
+func (o *Observer) startSpan(event core.Event) {
 	curID, ok := currentSpanID(event)
 	if !ok {
 		return
@@ -185,7 +185,7 @@ func (o *Observer) startSpan(event witness.Event) {
 // synthesized remote SpanContext built from rootID — the first span_id of
 // the chain, always this process's instance root — so every span of one
 // instance shares one OTel trace_id.
-func (o *Observer) parentContext(event witness.Event, rootID uuid.UUID) context.Context {
+func (o *Observer) parentContext(event core.Event, rootID uuid.UUID) context.Context {
 	ctx := context.Background()
 	if parent, ok := parentSpanID(event); ok {
 		if parentSpan, found := o.reg.Get(parent); found {
@@ -204,7 +204,7 @@ func (o *Observer) parentContext(event witness.Event, rootID uuid.UUID) context.
 	return trace.ContextWithSpanContext(ctx, sc)
 }
 
-func (o *Observer) finishSpan(event witness.Event) {
+func (o *Observer) finishSpan(event core.Event) {
 	curID, ok := currentSpanID(event)
 	if !ok {
 		return
@@ -221,7 +221,7 @@ func (o *Observer) finishSpan(event witness.Event) {
 	o.reg.Delete(curID)
 }
 
-func (o *Observer) addEvent(event witness.Event) {
+func (o *Observer) addEvent(event core.Event) {
 	curID, ok := currentSpanID(event)
 	if !ok {
 		return
@@ -236,7 +236,7 @@ func (o *Observer) addEvent(event witness.Event) {
 	)
 }
 
-func (o *Observer) recordError(event witness.Event) {
+func (o *Observer) recordError(event core.Event) {
 	curID, ok := currentSpanID(event)
 	if !ok {
 		return
@@ -269,7 +269,7 @@ func (o *Observer) recordError(event witness.Event) {
 // The link arrives after the span started, hence Span.AddLink rather than
 // trace.WithLinks. An event carrying the same ids is added too, so the
 // reference is visible in backends that do not render links.
-func (o *Observer) linkEvent(event witness.Event) {
+func (o *Observer) linkEvent(event core.Event) {
 	ownID, ok := currentSpanID(event)
 	if !ok {
 		return
@@ -302,7 +302,7 @@ func (o *Observer) linkEvent(event witness.Event) {
 	)
 }
 
-func recordsToAttributes(records []witness.Record) []attribute.KeyValue {
+func recordsToAttributes(records []core.Record) []attribute.KeyValue {
 	if len(records) == 0 {
 		return nil
 	}
@@ -315,7 +315,7 @@ func recordsToAttributes(records []witness.Record) []attribute.KeyValue {
 	return attrs
 }
 
-func findRecord(records []witness.Record, key string) (string, bool) {
+func findRecord(records []core.Record, key string) (string, bool) {
 	for _, r := range records {
 		if r.KeyEqual(key) {
 			return string(r.AppendValue(nil)), true

@@ -3,6 +3,7 @@ package witness
 import (
 	"context"
 	"errors"
+	"github.com/imakiri/witness/core"
 	"os"
 	"strconv"
 	"strings"
@@ -19,7 +20,7 @@ var errTest = errors.New("test error")
 // that source line contains token — the witness entry point that produced the
 // event. Reading the line back from disk keeps the test free of line-number
 // offsets, so it survives reformatting and insertions above the call.
-func requireCaller(t *testing.T, event Event, token string) {
+func requireCaller(t *testing.T, event core.Event, token string) {
 	t.Helper()
 
 	var i = strings.LastIndexByte(event.EventCaller, ':')
@@ -87,8 +88,13 @@ func TestCallers(t *testing.T) {
 			"ErrorOrInfo(": func(ctx context.Context) {
 				ErrorOrInfo(ctx, "ok", "err", nil)
 			},
+			// A custom event type is built in core, so its emitter calls
+			// core.Context.Observe directly and passes core.Caller(0) — 0,
+			// not 1, because it is reporting its own line rather than
+			// wrapping someone else's call. The contract holds for that
+			// shape too.
 			"Observe(": func(ctx context.Context) {
-				Observe(ctx, EventTypeLogInfo(), "m")
+				core.From(ctx).Observe(core.EventTypeLogInfo(), "m", core.Caller(0))
 			},
 		}
 		for token, call := range cases {
@@ -101,45 +107,20 @@ func TestCallers(t *testing.T) {
 		}
 	})
 
-	t.Run("Context methods", func(t *testing.T) {
-		var cases = map[string]func(c Context){
-			".Info(": func(c Context) {
-				c.Info("m")
-			},
-			".Warn(": func(c Context) {
-				c.Warn("m")
-			},
-			".Debug(": func(c Context) {
-				c.Debug("m")
-			},
-			".Error(": func(c Context) {
-				c.Error("m", errTest)
-			},
-		}
-		for token, call := range cases {
-			t.Run(strings.Trim(token, ".("), func(t *testing.T) {
-				obs, ctx := newCallerTest(t)
-				call(From(ctx))
-				require.Len(t, obs.all(), 1)
-				requireCaller(t, obs.last(), token)
-			})
-		}
-	})
-
 	// Span-shaped constructors capture their call site eagerly, so the finish
 	// event reports the constructor's position too — not wherever the deferred
-	// Finish happened to run.
+	// core.Finish happened to run.
 	t.Run("span constructors", func(t *testing.T) {
-		var cases = map[string]func(ctx context.Context) Finish{
-			"Span(": func(ctx context.Context) Finish {
+		var cases = map[string]func(ctx context.Context) core.Finish{
+			"Span(": func(ctx context.Context) core.Finish {
 				_, f := Span(ctx, "s")
 				return f
 			},
-			"Service(": func(ctx context.Context) Finish {
+			"Service(": func(ctx context.Context) core.Finish {
 				_, f := Service(ctx, "s")
 				return f
 			},
-			"Worker(": func(ctx context.Context) Finish {
+			"Worker(": func(ctx context.Context) core.Finish {
 				_, f := Worker(ctx, "s")
 				return f
 			},

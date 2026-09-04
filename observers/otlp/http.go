@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/core"
 )
 
 // Transport wraps base so every outgoing request gets a traceparent header
@@ -20,7 +21,7 @@ func Transport(base http.RoundTripper) http.RoundTripper {
 type transport struct{ base http.RoundTripper }
 
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	spans := witness.From(req.Context()).SpanIDs()
+	spans := core.From(req.Context()).SpanIDs()
 	if len(spans) > 0 {
 		req = req.Clone(req.Context())
 		Inject(req.Header, spans[len(spans)-1])
@@ -43,7 +44,7 @@ func Middleware(instanceCtx context.Context) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			name := r.Method + " " + r.URL.Path
-			ctx, finish := witness.Span(witness.From(instanceCtx).To(r.Context()), name)
+			ctx, finish := witness.Span(core.From(instanceCtx).To(r.Context()), name)
 			defer finish()
 			if upstreamSpanID, ok := Extract(r.Header); ok {
 				witness.ExternalMessageReceived(ctx, upstreamSpanID, name)

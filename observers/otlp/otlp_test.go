@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/core"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -27,16 +27,16 @@ func TestStartFinishProducesEndedSpan(t *testing.T) {
 	root := uuid.Must(uuid.NewV7())
 	span := uuid.Must(uuid.NewV7())
 
-	o.Observe(witness.Event{
+	o.Observe(core.Event{
 		SpanIDs:      []uuid.UUID{root, span},
 		EventID:      uuid.Must(uuid.NewV7()),
-		EventType:    witness.EventTypeSpanStart(),
+		EventType:    core.EventTypeSpanStart(),
 		EventMessage: "do_work",
 	})
-	o.Observe(witness.Event{
+	o.Observe(core.Event{
 		SpanIDs:      []uuid.UUID{root, span},
 		EventID:      uuid.Must(uuid.NewV7()),
-		EventType:    witness.EventTypeSpanFinish(),
+		EventType:    core.EventTypeSpanFinish(),
 		EventMessage: "do_work",
 	})
 
@@ -54,21 +54,21 @@ func TestLogAddEventToOpenSpan(t *testing.T) {
 	root := uuid.Must(uuid.NewV7())
 	span := uuid.Must(uuid.NewV7())
 
-	o.Observe(witness.Event{
+	o.Observe(core.Event{
 		SpanIDs:   []uuid.UUID{root, span},
 		EventID:   uuid.Must(uuid.NewV7()),
-		EventType: witness.EventTypeSpanStart(),
+		EventType: core.EventTypeSpanStart(),
 	})
-	o.Observe(witness.Event{
+	o.Observe(core.Event{
 		SpanIDs:      []uuid.UUID{root, span},
 		EventID:      uuid.Must(uuid.NewV7()),
-		EventType:    witness.EventTypeLogInfo(),
+		EventType:    core.EventTypeLogInfo(),
 		EventMessage: "checkpoint",
 	})
-	o.Observe(witness.Event{
+	o.Observe(core.Event{
 		SpanIDs:   []uuid.UUID{root, span},
 		EventID:   uuid.Must(uuid.NewV7()),
-		EventType: witness.EventTypeSpanFinish(),
+		EventType: core.EventTypeSpanFinish(),
 	})
 
 	ended := rec.Ended()
@@ -92,22 +92,22 @@ func TestErrorSetsStatus(t *testing.T) {
 	root := uuid.Must(uuid.NewV7())
 	span := uuid.Must(uuid.NewV7())
 
-	o.Observe(witness.Event{
+	o.Observe(core.Event{
 		SpanIDs:   []uuid.UUID{root, span},
 		EventID:   uuid.Must(uuid.NewV7()),
-		EventType: witness.EventTypeSpanStart(),
+		EventType: core.EventTypeSpanStart(),
 	})
-	o.Observe(witness.Event{
+	o.Observe(core.Event{
 		SpanIDs:      []uuid.UUID{root, span},
 		EventID:      uuid.Must(uuid.NewV7()),
-		EventType:    witness.EventTypeLogErrorNetwork(),
+		EventType:    core.EventTypeLogErrorNetwork(),
 		EventMessage: "upstream unreachable",
-		Records:      []witness.Record{errRecord{msg: "connection refused"}},
+		Records:      []core.Record{errRecord{msg: "connection refused"}},
 	})
-	o.Observe(witness.Event{
+	o.Observe(core.Event{
 		SpanIDs:   []uuid.UUID{root, span},
 		EventID:   uuid.Must(uuid.NewV7()),
-		EventType: witness.EventTypeSpanFinish(),
+		EventType: core.EventTypeSpanFinish(),
 	})
 
 	ended := rec.Ended()
@@ -126,16 +126,16 @@ func TestTraceIDStableAcrossSpans(t *testing.T) {
 	b := uuid.Must(uuid.NewV7())
 
 	for _, s := range []uuid.UUID{a, b} {
-		o.Observe(witness.Event{
+		o.Observe(core.Event{
 			SpanIDs:      []uuid.UUID{root, s},
 			EventID:      uuid.Must(uuid.NewV7()),
-			EventType:    witness.EventTypeSpanStart(),
+			EventType:    core.EventTypeSpanStart(),
 			EventMessage: "x",
 		})
-		o.Observe(witness.Event{
+		o.Observe(core.Event{
 			SpanIDs:   []uuid.UUID{root, s},
 			EventID:   uuid.Must(uuid.NewV7()),
-			EventType: witness.EventTypeSpanFinish(),
+			EventType: core.EventTypeSpanFinish(),
 		})
 	}
 

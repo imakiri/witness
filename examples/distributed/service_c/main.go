@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/core"
 	"github.com/imakiri/witness/observers/postgres"
 	"github.com/imakiri/witness/propagation"
 	"github.com/imakiri/witness/record"
@@ -51,7 +52,7 @@ func main() {
 	srv := &http.Server{
 		Addr: addr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			reqCtx := witness.From(instanceCtx).To(r.Context())
+			reqCtx := core.From(instanceCtx).To(r.Context())
 
 			ctx, finish := witness.Span(reqCtx, "POST /compute")
 			defer finish()

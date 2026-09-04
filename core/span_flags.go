@@ -1,4 +1,4 @@
-package witness
+package core
 
 // SpanFlags is the role a span_id plays in one event's span chain. An event
 // carries N span_ids and each of them relates to the event differently: one

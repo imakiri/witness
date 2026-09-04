@@ -3,7 +3,7 @@ package stdlog
 import (
 	"errors"
 	"fmt"
-	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/core"
 	"io"
 	"os"
 	"slices"
@@ -12,9 +12,9 @@ import (
 type Observer struct {
 	writer    io.Writer
 	errWriter io.Writer
-	types     []witness.EventType
-	flags     witness.PrintFlags
-	printer   witness.Printer
+	types     []core.EventType
+	flags     core.PrintFlags
+	printer   core.Printer
 }
 
 type Option func(o *Observer) error
@@ -22,9 +22,9 @@ type Option func(o *Observer) error
 // WithTypes restricts the observer to the listed event types; everything
 // else is dropped. Without it no filtering happens at all — including for
 // types registered via MustNewEventType after this observer was built.
-func WithTypes(types []witness.EventType) Option {
+func WithTypes(types []core.EventType) Option {
 	return func(o *Observer) error {
-		o.types = slices.SortedFunc(slices.Values(types), witness.EventTypesCompare)
+		o.types = slices.SortedFunc(slices.Values(types), core.EventTypesCompare)
 		return nil
 	}
 }
@@ -65,9 +65,9 @@ func WithUsingStdErr() Option {
 	return WithErrorWriter(os.Stderr)
 }
 
-func WithFlags(flags ...witness.PrintFlags) Option {
+func WithFlags(flags ...core.PrintFlags) Option {
 	return func(o *Observer) error {
-		o.flags = witness.PrintNone
+		o.flags = core.PrintNone
 		for _, f := range flags {
 			o.flags |= f
 		}
@@ -75,10 +75,10 @@ func WithFlags(flags ...witness.PrintFlags) Option {
 	}
 }
 
-func NewObserver(printer witness.Printer, options ...Option) (*Observer, error) {
+func NewObserver(printer core.Printer, options ...Option) (*Observer, error) {
 	var o = &Observer{
 		printer: printer,
-		flags:   witness.PrintAll,
+		flags:   core.PrintAll,
 		writer:  os.Stdout,
 	}
 
@@ -94,9 +94,9 @@ func NewObserver(printer witness.Printer, options ...Option) (*Observer, error) 
 	return o, nil
 }
 
-func (o *Observer) Observe(event witness.Event) {
+func (o *Observer) Observe(event core.Event) {
 	if o.types != nil {
-		if _, found := slices.BinarySearchFunc(o.types, event.EventType, witness.EventTypesCompare); !found {
+		if _, found := slices.BinarySearchFunc(o.types, event.EventType, core.EventTypesCompare); !found {
 			return
 		}
 	}

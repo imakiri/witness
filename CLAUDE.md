@@ -49,14 +49,34 @@ Witness is a single-entity observability data model: every metric, log line, spa
 same kind of object — an **event** with one time dimension (`event_date`) and N space dimensions (`event_span_ids`). The
 README has the full data-model rationale and example tables; read it before changing event shapes.
 
-### Core types (root package `witness`)
+### Package split
 
-- **`Observer`** (`observer.go`) — the only interface backends implement: `Observe(Event)`, where `Event` is a struct
+Two packages in the root module, split by audience:
+
+- **`witness`** (root) — the call API and nothing else: `Info`/`Warn`/`Debug`/`Error*`, `Span`/`Service`/`Worker`/`SpanStart`/`SpanFinish`, `Instance`/`Test`, `Link`/`LinkTo`, `*Message{Sent,Received}`. 27 functions plus three aliases (`Record`, `EventType`, `Finish`) so its own signatures read without a second import. It declares no types of its own.
+- **`witness/core`** — the data model and plumbing: `Context` (+ `With`/`From`/`To`), `Event`, `Observer`/`NilObserver`, `EventType` and its 28 constructors and registry, `SpanFlags`, `Record`, `Printer`/`Appender`/`PrintFlags`, `Caller`/`SetCallDepth`.
+
+  There is deliberately **no `witness.Observe`** for custom event types. It took a `core.EventType`, which only `core` can produce, so the caller already imported `core` and the wrapper bought nothing. Emit one directly:
+
+  ```go
+  c := core.From(ctx)
+  c.Observe(myEventType, "cache evicted", core.Caller(0), records...)
+  ```
+
+**The boundary is forced, not chosen.** `Context.Observe` constructs an `Event`, so `Event`, `Observer`, `EventType`, `SpanFlags` and `Record` must live with `Context` — putting them in `witness` while `Context` sits in `core` closes an import cycle. What is *not* forced, and is the point: `witness` depends on `core`, never the reverse, so the call API can change without touching the observer contract and vice versa.
+
+Consequence worth knowing: most observers no longer import `witness` at all — `multi`, `tee`, `test`, `stdlog`, `prometheus`, `printers` and `record` need only `core`. If you find yourself adding `"github.com/imakiri/witness"` to an observer, check whether you actually want `core`.
+
+`caller.go` and the unexported `record` struct stayed in `witness`: the caller contract is about *entry points*, which all live there, and `core.Context.Observe` takes the location as a parameter rather than walking the stack itself. `core.Context` deliberately has no `Info`/`Warn`/`Debug`/`Error` methods — they duplicated the top-level helpers and were the only thing in `core` that would have needed the caller machinery.
+
+### Core types (package `witness/core`)
+
+- **`Observer`** (`core/observer.go`) — the only interface backends implement: `Observe(Event)`, where `Event` is a struct
   carrying `SpanIDs` (**`[chain..., links...]`, not purely a chain — select by flag, not position**), `SpanFlags` (
   parallel; per-span role bitmask — own/parent/ancestor/instance/link —
-  see `span_flags.go`), `EventID`, `EventDate`, `EventType`, `EventMessage`, `EventCaller`, and `Records`. `NilObserver`
+  see `core/span_flags.go`), `EventID`, `EventDate`, `EventType`, `EventMessage`, `EventCaller`, and `Records`. `NilObserver`
   is the zero-cost no-op.
-- **`Context`** (`context.go`) — value type carrying `(observer, spanIDs, t)`. Three fields; **every derived `Context`
+- **`Context`** (`core/context.go`) — value type carrying `(observer, spanIDs, t)`. Three fields; **every derived `Context`
   must copy all three** — a dropped `t` silently breaks test line attribution. Stored in `context.Context` under an
   internal key; retrieved with `From(ctx)`, attached with `With(ctx, c)` / `c.To(ctx)`.
 
@@ -97,7 +117,7 @@ README has the full data-model rationale and example tables; read it before chan
   and `Context.rolesUnknown` (a merged chain has no single own span, so every role it reported was a guess — the
   relation it expressed is a link).
 
-- **`EventType`** (`events.go`) — `(errorFlag, int64, string)` triple. All built-in types are
+- **`EventType`** (`core/events.go`) — `(errorFlag, int64, string)` triple. All built-in types are
   functions (`EventTypeLogInfo()`, `EventTypeSpanStart()`, …) that must *also* be listed in the package-level `events`
   slice; `Events()` returns a copy of it and is what type-filtering observers and column-width calculations read. **A
   built-in type missing from `events` is a type those consumers silently drop** — that bug hid `span:wait_group:*` and
@@ -107,7 +127,7 @@ README has the full data-model rationale and example tables; read it before chan
   collision would make a type filter's binary search match the wrong type. The `i` range `(-1000, +1000)` is reserved;
   custom types must use `MustNewEventType` with `|i| >= 1000` and a name ≤128 runes. By convention paired start/finish
   use opposite-sign codes (e.g. `+20`/`-20`).
-- **`Printer` / `Appender` / `PrintFlags`** (`printer.go`) — rendering is decoupled from transport. An observer that
+- **`Printer` / `Appender` / `PrintFlags`** (`core/printer.go`) — rendering is decoupled from transport. An observer that
   writes text takes a `Printer` (`Print(io.Writer, Event, PrintFlags)`) or
   an `Appender` (`Append([]byte, Event, PrintFlags) []byte`) and a `PrintFlags` bitmask selecting which columns to
   emit (`PrintAll` / `PrintNone` at the ends). Implementations live in the `printers` module: `printers.Pretty` (aligned
@@ -117,7 +137,7 @@ README has the full data-model rationale and example tables; read it before chan
   has no trace_id to spend there), so `Extract` recovers the exact uuid; feed it into `LinkTo` or a `*MessageReceived`
   inside the request's own span — the upstream span is referenced, never entered. `observers/otlp/propagation.go` is a
   deprecated shim over this.
-- **`Record`** (`record.go` at root, and module `record/`) — interface (`AppendKey`, `AppendValue`, `KeyEqual`). The
+- **`Record`** (`core/record.go`, and module `record/`) — interface (`AppendKey`, `AppendValue`, `KeyEqual`). The
   root package has a minimal internal `record` struct; the `github.com/imakiri/witness/record` module is the public
   toolkit (`String`, `Int`, `Float`, `Bool`, `Bytes`, `Stringer`, `Error`, plus `Marshaller` for reflection-based
   struct→records).
@@ -134,8 +154,11 @@ README has the full data-model rationale and example tables; read it before chan
   and `InternalMessage{Sent,Received}` / `ExternalMessage{Sent,Received}` — the same pair with message event
   types; `*Sent` mints and returns the msgID, `*Received` takes it. Emit `*Received` inside the span that handles the
   message.
-- **`caller`** (`caller.go`) — attaches the source location of the witness call to every event, as `file:line`. Uses a
-  sync.Pool of PC slices sized by `SetCallDepth` (default 16).
+- **`caller`** (`core/caller.go`) — attaches the source location of the witness call to every event, as `file:line`. Uses
+  a sync.Pool of PC slices sized by `SetCallDepth` (default 16). `Caller(skip)` counts frames above its own caller:
+  **0 is the line on which `Caller` is written, 1 is that line's caller.** Every entry point in `witness` passes 1,
+  because it reports on someone else's behalf; code emitting an event directly passes 0. Getting this backwards
+  attributes the event one frame too high and the mistake is invisible until `TestCallers` runs.
 
   **The caller contract:** *the reported location is the line on which the witness entry
   point (`Info`, `Error`, `Span`, `SpanFinish`, …) is written.* Everything in `caller.go` exists to uphold that one
@@ -153,7 +176,7 @@ README has the full data-model rationale and example tables; read it before chan
       reintroduce frame filtering.
     - A house wrapper (`func (l *myLogger) Info(m string) { witness.Info(l.ctx, m) }`) is attributed to
       the `witness.Info` line inside the wrapper. That is the rule holding, not an exception: `witness.Info` really is
-      written there. There is no exported way to skip a frame — `Context.Observe` takes a caller string, but the package
+      written there. There is no way to skip a *further* frame — `Context.Observe` takes a caller string and the package
       exports nothing that produces one.
     - It uses `runtime.CallersFrames`, never `FuncForPC`/`FileLine` on a raw pc: only `CallersFrames` does the
       return-address adjustment and expands inlined frames. Without it the line drifts by a build-flags-dependent

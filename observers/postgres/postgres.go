@@ -24,7 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/core"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -54,7 +54,7 @@ type connection interface {
 type Observer struct {
 	wg             *sync.WaitGroup
 	done           chan struct{}
-	observeCh      chan witness.Event
+	observeCh      chan core.Event
 	config         Config
 	connection     connection
 	closeOnce      sync.Once
@@ -114,7 +114,7 @@ func newObserver(config Config, conn connection, workers int) *Observer {
 	observer := &Observer{
 		wg:         new(sync.WaitGroup),
 		done:       make(chan struct{}),
-		observeCh:  make(chan witness.Event, config.CollectionMaxSize),
+		observeCh:  make(chan core.Event, config.CollectionMaxSize),
 		config:     config,
 		connection: conn,
 	}
@@ -157,7 +157,7 @@ func (o *Observer) Dropped() uint64 {
 // Observe is non-blocking. It enqueues event for batching, or drops it
 // (incrementing Dropped) when the channel is full or the Observer has been
 // closed. Safe to call from any goroutine.
-func (o *Observer) Observe(event witness.Event) {
+func (o *Observer) Observe(event core.Event) {
 	// Two selects, not one: a single select with <-o.done, the send and a
 	// default picks *randomly* among the ready cases, so a closed Observer
 	// with buffer to spare still enqueued roughly half of what it was given.
@@ -245,7 +245,7 @@ func (o *Observer) flush(batch *pgx.Batch) {
 	}
 }
 
-func queueEvent(batch *pgx.Batch, event witness.Event) {
+func queueEvent(batch *pgx.Batch, event core.Event) {
 	// Normalize to UTC. The events schema stores event_date as `timestamp
 	// without time zone`; mixing wall-clock zones makes Grafana's UTC-based
 	// $__timeFilter compare apples to oranges and silently filters
@@ -263,7 +263,7 @@ func queueEvent(batch *pgx.Batch, event witness.Event) {
 	for i, spanID := range event.SpanIDs {
 		// SpanFlags is parallel to SpanIDs but may be nil or short on
 		// hand-built events; 0 is the schema's "roles unknown".
-		var flags witness.SpanFlags
+		var flags core.SpanFlags
 		if i < len(event.SpanFlags) {
 			flags = event.SpanFlags[i]
 		}

@@ -5,6 +5,47 @@ everything not listed is additive.
 
 ## v0.31 — one entity, one owner: the span model tightened
 
+### The data model moved to `witness/core`
+
+`witness` is now the call API and nothing else — `Info`, `Span`, `Instance`,
+`Link` and their kin. Everything an observer or a piece of plumbing needs
+lives in `github.com/imakiri/witness/core`, in the same module:
+
+| moved to `core` |
+|---|
+| `Context`, `With`, `From`, `Context.To` |
+| `Event`, `Observer`, `NilObserver` |
+| `EventType`, its 28 constructors, `MustNewEventType`, `Events`, `EventTypesCompare` |
+| `SpanFlags` and its constants |
+| `Record` |
+| `Printer`, `Appender`, `PrintFlags` |
+
+```go
+// Old
+func (o *MyObs) Observe(event witness.Event) { ... }
+
+// New
+import "github.com/imakiri/witness/core"
+
+func (o *MyObs) Observe(event core.Event) { ... }
+```
+
+Application code is mostly unaffected: `witness.Info(ctx, "msg", record.String(...))`
+still compiles, because `Record`, `EventType` and `Finish` remain in `witness`
+as aliases of the core types. Only code that names `witness.Event`,
+`witness.Observer`, `witness.Context`, an `EventType` constructor or a
+`Print*` flag has to change — that is, observers and printers.
+
+Most observers end up not importing `witness` at all.
+
+`core.Context` lost its `Info` / `Warn` / `Debug` / `Error` methods; they
+duplicated the top-level functions. `core.Context.Observe` still takes the
+caller location as a parameter — the caller machinery stayed in `witness`
+with the entry points whose lines it reports.
+
+New on `core.Context`, all of it plumbing the `witness` package needs:
+`NewInstance`, `WithChildSpan`, `ObserveLinked`, `Helper`.
+
 This release reworks the span model as a whole. Read it end to end; the
 pieces depend on each other.
 
@@ -168,22 +209,32 @@ derived, so it could disagree with the span chain in the same row.
 `Context.InstanceSpanID()` returns the chain's first span, the emitting
 process. `Context.RootSpanID()` is a synonym.
 
-### `Observe` loses `eventID` and `eventDate`
+### `Observe` moved to `core` and lost `eventID` / `eventDate`
+
+There is no `witness.Observe`. It took an `EventType`, which only `core` can
+produce, so its caller already imported `core` and the wrapper added nothing.
+Emit a custom event through the Context directly:
 
 ```go
 // Old
 witness.Observe(ctx, uuid.Must(uuid.NewV7()), time.Now(), myEventType, "message", records...)
-witness.From(ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), myEventType, "message", caller, records...)
 
 // New
-witness.Observe(ctx, myEventType, "message", records...)
-witness.From(ctx).Observe(myEventType, "message", caller, records...)
+c := core.From(ctx)
+c.Observe(myEventType, "message", core.Caller(0), records...)
 ```
 
 The id is always a fresh uuid v7 and the date always `time.Now()` at the
 call — every caller already passed exactly that, and accepting them let two
 events claim one identity or an event claim a time its process never saw.
 Span roles are not passed either: they are derived.
+
+`core.Caller(skip)` is the exported form of what the witness entry points use.
+skip counts frames above its own caller: **0** reports the line on which
+`Caller` is written, **1** the line that called it. Emitting directly wants 0;
+a wrapper emitting on someone else's behalf wants 1.
+
+`SetCallDepth` moved to `core` with it.
 
 There is no replacement for supplying a past `eventDate`. To import events
 recorded elsewhere, build the `witness.Event` yourself and hand it to the

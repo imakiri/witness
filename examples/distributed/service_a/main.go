@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/core"
 	"github.com/imakiri/witness/observers/postgres"
 	"github.com/imakiri/witness/propagation"
 	"github.com/imakiri/witness/record"
@@ -53,7 +54,7 @@ func main() {
 			// One span per request. Downstream services rejoin it by the
 			// span_id carried in the traceparent header — there is no
 			// trace_id, the shared span_id is the link.
-			reqCtx := witness.From(ctx).To(r.Context())
+			reqCtx := core.From(ctx).To(r.Context())
 			workCtx, finishWork := witness.Span(reqCtx, "handle-work")
 			defer finishWork()
 

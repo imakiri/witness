@@ -5,6 +5,7 @@ import (
 	"context"
 	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/core"
 	"github.com/imakiri/witness/record"
 	"log"
 )
@@ -12,10 +13,10 @@ import (
 type Adapter struct {
 	ctx       context.Context
 	prefix    string
-	eventType witness.EventType
+	eventType core.EventType
 }
 
-func NewAdapter(ctx context.Context, eventType witness.EventType) *log.Logger {
+func NewAdapter(ctx context.Context, eventType core.EventType) *log.Logger {
 	var adapter = new(Adapter)
 	adapter.ctx = ctx
 	adapter.prefix = uuid.Must(uuid.NewV7()).String()
@@ -45,6 +46,6 @@ func (a *Adapter) Write(p []byte) (n int, err error) {
 	var headerCaller = bytes.TrimSuffix(headerSegments[len(headerSegments)-1], []byte(":"))
 	var body = segments[1]
 	body = bytes.TrimSuffix(body, []byte("\n"))
-	witness.From(a.ctx).Observe(a.eventType, string(body), string(headerCaller))
+	core.From(a.ctx).Observe(a.eventType, string(body), string(headerCaller))
 	return len(p), nil
 }

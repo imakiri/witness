@@ -1,4 +1,4 @@
-package witness
+package core
 
 import (
 	"runtime"
@@ -24,7 +24,20 @@ func init() {
 	SetCallDepth(16)
 }
 
-// caller reports where user code called into witness.
+// Caller reports where user code called into witness.
+//
+// skip counts frames above Caller's own caller: 0 is the line on which Caller
+// is written, 1 is that line's caller. Emitting an event directly wants 0;
+// a wrapper that emits on someone else's behalf — every entry point in the
+// witness package — wants 1, so the event is attributed to the line that
+// called the wrapper rather than to the wrapper's own body.
+//
+// It is exported because a custom event type is built here in core, so the
+// code emitting one calls core.Context.Observe directly and needs a location
+// to hand it:
+//
+//	c := core.From(ctx)
+//	c.Observe(myEventType, "cache evicted", core.Caller(0), records...)
 //
 // The contract, stated in full in CLAUDE.md: the reported location is the line
 // on which the witness entry point (Info, Error, Span, SpanFinish, …) is
@@ -44,7 +57,7 @@ func init() {
 // Write `defer func() { witness.Info(...) }()` instead — a deferred closure has
 // its own frame sitting on the witness call, and reports it correctly.
 // Constructors returning a Finish capture their call site eagerly and are immune.
-func caller(skip int) string {
+func Caller(skip int) string {
 	var pc = pcPool.Get().([]uintptr)
 	defer pcPool.Put(pc)
 

@@ -9,6 +9,11 @@ See [`MIGRATION.md`](./MIGRATION.md) for breaking changes between versions.
 Witness is pre-1.0. The root module carries the API; every observer and
 adapter is a separate module, so you pull only the dependencies you import.
 
+The API is split in two: `witness` is what application code calls, and
+`witness/core` — same module — holds the data model and the observer
+contract. Write an `Observer` or a `Printer` against `core`; call
+`witness.Info` and friends from everything else.
+
 ```sh
 go get github.com/imakiri/witness@v0.30.0
 go get github.com/imakiri/witness/record@v0.20.0

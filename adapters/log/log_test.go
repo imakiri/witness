@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/core"
 	"github.com/imakiri/witness/observers/stdlog"
 	"github.com/imakiri/witness/printers"
 	"github.com/stretchr/testify/require"
@@ -23,14 +24,14 @@ func TestLog(t *testing.T) {
 	var ctx, finish = witness.Instance(context.Background(), observer, "test-log", "1")
 	defer finish()
 
-	var eventType = witness.MustNewEventType(4000, "log:adapter:log")
+	var eventType = core.MustNewEventType(4000, "log:adapter:log")
 	var log = NewAdapter(ctx, eventType)
 	log.Println("some event")
 }
 
-type captureObserver struct{ events []witness.Event }
+type captureObserver struct{ events []core.Event }
 
-func (c *captureObserver) Observe(event witness.Event) { c.events = append(c.events, event) }
+func (c *captureObserver) Observe(event core.Event) { c.events = append(c.events, event) }
 
 // The adapter's whole job is splitting the log.Logger header off the body.
 // Assert on both halves — the header layout depends on the exact flag set
@@ -40,7 +41,7 @@ func TestAdapterParsesHeader(t *testing.T) {
 	var ctx, finish = witness.Instance(context.Background(), observer, "test-log", "1")
 	defer finish()
 
-	var eventType = witness.MustNewEventType(4001, "log:adapter:header")
+	var eventType = core.MustNewEventType(4001, "log:adapter:header")
 	var logger = NewAdapter(ctx, eventType)
 	logger.Println("some event")
 	_, _, line, _ := runtime.Caller(0)

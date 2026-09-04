@@ -2,7 +2,7 @@ package test
 
 import (
 	"fmt"
-	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/core"
 )
 
 type T interface {
@@ -14,8 +14,8 @@ type T interface {
 type Observer struct {
 	t       T
 	foe     bool
-	flags   witness.PrintFlags
-	printer witness.Appender
+	flags   core.PrintFlags
+	printer core.Appender
 }
 
 type Option func(o *Observer) error
@@ -27,9 +27,9 @@ func WithFailOnError() Option {
 	}
 }
 
-func WithFlags(flags ...witness.PrintFlags) Option {
+func WithFlags(flags ...core.PrintFlags) Option {
 	return func(o *Observer) error {
-		o.flags = witness.PrintNone
+		o.flags = core.PrintNone
 		for _, f := range flags {
 			o.flags |= f
 		}
@@ -37,10 +37,10 @@ func WithFlags(flags ...witness.PrintFlags) Option {
 	}
 }
 
-func NewObserver(t T, printer witness.Appender, options ...Option) (*Observer, error) {
+func NewObserver(t T, printer core.Appender, options ...Option) (*Observer, error) {
 	var o = &Observer{
 		t:       t,
-		flags:   witness.PrintAll,
+		flags:   core.PrintAll,
 		printer: printer,
 	}
 
@@ -53,7 +53,7 @@ func NewObserver(t T, printer witness.Appender, options ...Option) (*Observer, e
 	return o, nil
 }
 
-func (o *Observer) Observe(event witness.Event) {
+func (o *Observer) Observe(event core.Event) {
 	o.t.Helper()
 	o.t.Logf("%s", o.printer.Append(nil, event, o.flags))
 	if event.EventType.IsError() && o.foe {

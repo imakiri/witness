@@ -1,4 +1,4 @@
-package witness
+package core
 
 import (
 	"context"
@@ -66,6 +66,53 @@ type Context struct {
 	spanIDs []uuid.UUID
 }
 
+// NewInstance builds the Context of a process: a chain of exactly one fresh
+// span, which is therefore the instance root. Nothing sits above an
+// instance, so this is the only way a chain begins; tb is the optional test
+// that owns it.
+//
+// It emits nothing. The span:instance:online event that announces the
+// process is the caller's job — see witness.Instance.
+func NewInstance(tb testing.TB, observer Observer) Context {
+	if observer == nil {
+		observer = NilObserver{}
+	}
+	return Context{
+		t:        tb,
+		observer: observer,
+		spanIDs:  []uuid.UUID{uuid.Must(uuid.NewV7())},
+	}
+}
+
+// Helper marks the calling function as a test helper when this Context was
+// built by witness.Test, so a failure points at the test's own line. A no-op
+// otherwise.
+func (c Context) Helper() {
+	if c.t != nil {
+		c.t.Helper()
+	}
+}
+
+// WithChildSpan returns a Context whose chain has spanID appended as the new
+// current span; everything else (observer, t) is inherited. Every span in a
+// chain is one this process owns — to point at a span another process owns,
+// reference it as a link with ObserveLinked.
+//
+// A span_id already in the chain is not appended twice: re-opening a span you
+// are already inside is a no-op, and a duplicate would violate the unique
+// (event_id, span_id) index in Postgres — which, because that observer
+// batches, would discard every event queued alongside it.
+func (c Context) WithChildSpan(spanID uuid.UUID) Context {
+	if slices.Contains(c.spanIDs, spanID) {
+		return c
+	}
+	return Context{
+		t:        c.t,
+		observer: c.observer,
+		spanIDs:  append(slices.Clone(c.spanIDs), spanID),
+	}
+}
+
 func (c Context) IsNil() bool {
 	return c.observer == nil || c.spanIDs == nil
 }
@@ -125,25 +172,21 @@ func (c Context) CurrentSpanID() uuid.UUID {
 // invited two events to claim the same identity or an event to claim a
 // time its own process never saw.
 func (c Context) Observe(eventType EventType, eventName string, eventCaller string, records ...Record) {
-	if c.t != nil {
-		c.t.Helper()
-	}
-	c.observe(nil, eventType, eventName, eventCaller, records...)
+	c.Helper()
+	c.ObserveLinked(nil, eventType, eventName, eventCaller, records...)
 }
 
-// observe is Observe with foreign span_ids referenced by this one event.
+// ObserveLinked is Observe with foreign span_ids referenced by this one event.
 // They are appended after the chain and flagged SpanFlagLink only — a link
 // is not a scope the process is inside, so it gets no positional role. A
 // link already present in the chain is dropped: a duplicate span_id in one
 // event violates the unique (event_id, span_id) index in Postgres, which,
 // because the observer batches, would discard every event queued with it.
-func (c Context) observe(links []uuid.UUID, eventType EventType, eventName string, eventCaller string, records ...Record) {
+func (c Context) ObserveLinked(links []uuid.UUID, eventType EventType, eventName string, eventCaller string, records ...Record) {
 	if c.observer == nil {
 		return
 	}
-	if c.t != nil {
-		c.t.Helper()
-	}
+	c.Helper()
 	var spanIDs = c.spanIDs
 	if len(links) > 0 {
 		spanIDs = slices.Clone(c.spanIDs)
@@ -163,34 +206,6 @@ func (c Context) observe(links []uuid.UUID, eventType EventType, eventName strin
 		EventCaller:  eventCaller,
 		Records:      records,
 	})
-}
-
-func (c Context) Info(msg string, records ...Record) {
-	if c.t != nil {
-		c.t.Helper()
-	}
-	c.Observe(EventTypeLogInfo(), msg, caller(1), records...)
-}
-
-func (c Context) Warn(msg string, records ...Record) {
-	if c.t != nil {
-		c.t.Helper()
-	}
-	c.Observe(EventTypeLogWarn(), msg, caller(1), records...)
-}
-
-func (c Context) Debug(msg string, records ...Record) {
-	if c.t != nil {
-		c.t.Helper()
-	}
-	c.Observe(EventTypeLogDebug(), msg, caller(1), records...)
-}
-
-func (c Context) Error(msg string, err error, records ...Record) {
-	if c.t != nil {
-		c.t.Helper()
-	}
-	c.Observe(EventTypeLogError(), msg, caller(1), appendError(records, err)...)
 }
 
 type Finish func(records ...Record)

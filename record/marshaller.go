@@ -2,7 +2,7 @@ package record
 
 import (
 	"fmt"
-	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/core"
 	"reflect"
 )
 
@@ -24,11 +24,11 @@ type Marshaller[KJ KeyJoiner] struct {
 	PreferStringer bool
 }
 
-func (m Marshaller[KJ]) Marshal(key string, value any, prefix ...witness.Record) []witness.Record {
+func (m Marshaller[KJ]) Marshal(key string, value any, prefix ...core.Record) []core.Record {
 	return append(prefix, m.marshal(key, 0, reflect.ValueOf(value), nil)...)
 }
 
-func (m Marshaller[KJ]) marshal(key string, depth uint64, v reflect.Value, records []witness.Record) []witness.Record {
+func (m Marshaller[KJ]) marshal(key string, depth uint64, v reflect.Value, records []core.Record) []core.Record {
 	if depth >= m.MaxDepth {
 		return records
 	} else {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/core"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -66,11 +67,11 @@ func (b *blockingBatchResults) Close() error {
 	}
 }
 
-func makeEvent() witness.Event {
-	return witness.Event{
+func makeEvent() core.Event {
+	return core.Event{
 		EventID:      uuid.Must(uuid.NewV7()),
 		EventDate:    time.Now(),
-		EventType:    witness.EventTypeLogInfo(),
+		EventType:    core.EventTypeLogInfo(),
 		EventMessage: "test",
 		EventCaller:  "postgres_test",
 	}
@@ -282,7 +283,7 @@ func TestObserverAfterCloseDropsAndCountsEveryEvent(t *testing.T) {
 }
 
 // TestObserverPropagatesInstanceSpan — events emitted through a
-// witness.Context that went through witness.Instance must all land in the DB
+// core.Context that went through witness.Instance must all land in the DB
 // carrying that instance's span_id, flagged as the instance (span_flags & 8).
 // That flagged span is what replaced the service_name column: it identifies
 // the emitting process, and its span:instance:online event carries the name.
@@ -329,7 +330,7 @@ func TestObserverPropagatesInstanceSpan(t *testing.T) {
 	// Build a real witness Context the way an application would.
 	rootCtx, finishInstance := witness.Instance(context.Background(), obs, "test-service", "v0.0.0")
 	childCtx, finishSpan := witness.Span(rootCtx, "do-work")
-	witness.From(childCtx).Info("hello from child span")
+	witness.Info(childCtx, "hello from child span")
 	finishSpan()
 	finishInstance()
 

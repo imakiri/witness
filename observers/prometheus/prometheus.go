@@ -31,7 +31,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/core"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -121,16 +121,16 @@ func (o *Observer) Registry() *prometheus.Registry {
 	return o.registry
 }
 
-func (o *Observer) Observe(event witness.Event) {
+func (o *Observer) Observe(event core.Event) {
 	switch event.EventType {
-	case witness.EventTypeMetricCounter():
+	case core.EventTypeMetricCounter():
 		o.observeCounter(event.EventMessage, event.Records)
-	case witness.EventTypeMetricHistogram():
+	case core.EventTypeMetricHistogram():
 		o.observeHistogram(event.EventMessage, event.Records)
 	}
 }
 
-func (o *Observer) observeCounter(name string, records []witness.Record) {
+func (o *Observer) observeCounter(name string, records []core.Record) {
 	f, ok := o.counters[name]
 	if !ok {
 		return
@@ -142,7 +142,7 @@ func (o *Observer) observeCounter(name string, records []witness.Record) {
 	f.vec.WithLabelValues(selectLabelValues(records, f.labelKeys)...).Add(delta)
 }
 
-func (o *Observer) observeHistogram(name string, records []witness.Record) {
+func (o *Observer) observeHistogram(name string, records []core.Record) {
 	f, ok := o.histograms[name]
 	if !ok {
 		return
@@ -156,7 +156,7 @@ func (o *Observer) observeHistogram(name string, records []witness.Record) {
 
 // selectFloat returns the float value of the first record whose key equals
 // the target. The record value is parsed via strconv.ParseFloat.
-func selectFloat(records []witness.Record, key string) (float64, bool) {
+func selectFloat(records []core.Record, key string) (float64, bool) {
 	for _, r := range records {
 		if !r.KeyEqual(key) {
 			continue
@@ -173,7 +173,7 @@ func selectFloat(records []witness.Record, key string) (float64, bool) {
 // selectLabelValues returns the value for each configured label key, in the
 // same order as labelKeys. Keys without a matching record produce an empty
 // string, matching standard Prometheus client behavior.
-func selectLabelValues(records []witness.Record, labelKeys []string) []string {
+func selectLabelValues(records []core.Record, labelKeys []string) []string {
 	out := make([]string, len(labelKeys))
 	for i, k := range labelKeys {
 		for _, r := range records {

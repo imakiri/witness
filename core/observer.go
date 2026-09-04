@@ -1,4 +1,4 @@
-package witness
+package core
 
 import (
 	"github.com/gofrs/uuid/v5"

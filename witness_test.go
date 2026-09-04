@@ -2,6 +2,7 @@ package witness
 
 import (
 	"context"
+	"github.com/imakiri/witness/core"
 	"sync"
 	"testing"
 
@@ -11,10 +12,10 @@ import (
 
 type captureObserver struct {
 	mu     sync.Mutex
-	events []Event
+	events []core.Event
 }
 
-func (c *captureObserver) Observe(event Event) {
+func (c *captureObserver) Observe(event core.Event) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.events = append(c.events, event)
@@ -26,16 +27,16 @@ func (c *captureObserver) reset() {
 	c.events = nil
 }
 
-func (c *captureObserver) last() Event {
+func (c *captureObserver) last() core.Event {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.events[len(c.events)-1]
 }
 
-func (c *captureObserver) all() []Event {
+func (c *captureObserver) all() []core.Event {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return append([]Event(nil), c.events...)
+	return append([]core.Event(nil), c.events...)
 }
 
 func TestServiceNestsUnderInstance(t *testing.T) {
@@ -49,19 +50,19 @@ func TestServiceNestsUnderInstance(t *testing.T) {
 	require.Len(t, events, 4)
 
 	rootSpan := events[0].SpanIDs[0]
-	require.Equal(t, EventTypeSpanInstanceOnline(), events[0].EventType)
+	require.Equal(t, core.EventTypeSpanInstanceOnline(), events[0].EventType)
 
-	require.Equal(t, EventTypeSpanServiceStart(), events[1].EventType)
+	require.Equal(t, core.EventTypeSpanServiceStart(), events[1].EventType)
 	require.Len(t, events[1].SpanIDs, 2, "service start should carry root + service span_id")
 	require.Equal(t, rootSpan, events[1].SpanIDs[0])
 
 	svcSpan := events[1].SpanIDs[1]
 	require.NotEqual(t, uuid.Nil, svcSpan)
 
-	require.Equal(t, EventTypeSpanServiceFinish(), events[2].EventType)
+	require.Equal(t, core.EventTypeSpanServiceFinish(), events[2].EventType)
 	require.Equal(t, []uuid.UUID{rootSpan, svcSpan}, events[2].SpanIDs)
 
-	require.Equal(t, EventTypeSpanInstanceOffline(), events[3].EventType)
+	require.Equal(t, core.EventTypeSpanInstanceOffline(), events[3].EventType)
 }
 
 func TestSpanInsideServiceInheritsServiceSpan(t *testing.T) {
@@ -79,7 +80,7 @@ func TestSpanInsideServiceInheritsServiceSpan(t *testing.T) {
 
 	rootSpan := events[0].SpanIDs[0]
 	svcSpan := events[1].SpanIDs[1]
-	require.Equal(t, EventTypeSpanStart(), events[2].EventType)
+	require.Equal(t, core.EventTypeSpanStart(), events[2].EventType)
 	require.Len(t, events[2].SpanIDs, 3, "nested span should carry root + service + inner span_id")
 	require.Equal(t, rootSpan, events[2].SpanIDs[0])
 	require.Equal(t, svcSpan, events[2].SpanIDs[1])
@@ -107,8 +108,8 @@ func TestInternalMessageSharesMsgID(t *testing.T) {
 
 	sent := sentEvents[1]
 	recv := recvEvents[1]
-	require.Equal(t, EventTypeSpanInternalMessageSent(), sent.EventType)
-	require.Equal(t, EventTypeSpanInternalMessageReceived(), recv.EventType)
+	require.Equal(t, core.EventTypeSpanInternalMessageSent(), sent.EventType)
+	require.Equal(t, core.EventTypeSpanInternalMessageReceived(), recv.EventType)
 
 	require.Contains(t, sent.SpanIDs, msgID)
 	require.Contains(t, recv.SpanIDs, msgID)
@@ -130,10 +131,10 @@ func TestExternalMessageRoundTrip(t *testing.T) {
 	events := obs.all()
 	require.Len(t, events, 3)
 
-	require.Equal(t, EventTypeSpanExternalMessageSent(), events[1].EventType)
+	require.Equal(t, core.EventTypeSpanExternalMessageSent(), events[1].EventType)
 	require.Contains(t, events[1].SpanIDs, msgID)
 
-	require.Equal(t, EventTypeSpanExternalMessageReceived(), events[2].EventType)
+	require.Equal(t, core.EventTypeSpanExternalMessageReceived(), events[2].EventType)
 	require.Contains(t, events[2].SpanIDs, msgID)
 }
 
@@ -148,12 +149,12 @@ func TestWorkerInheritsParent(t *testing.T) {
 	require.Len(t, events, 4)
 
 	rootSpan := events[0].SpanIDs[0]
-	require.Equal(t, EventTypeSpanWorkerStart(), events[1].EventType)
+	require.Equal(t, core.EventTypeSpanWorkerStart(), events[1].EventType)
 	require.Len(t, events[1].SpanIDs, 2)
 	require.Equal(t, rootSpan, events[1].SpanIDs[0])
 
 	workerSpan := events[1].SpanIDs[1]
-	require.Equal(t, EventTypeSpanWorkerFinish(), events[2].EventType)
+	require.Equal(t, core.EventTypeSpanWorkerFinish(), events[2].EventType)
 	require.Equal(t, []uuid.UUID{rootSpan, workerSpan}, events[2].SpanIDs)
 }
 
@@ -165,7 +166,7 @@ func TestSpanFlags(t *testing.T) {
 
 		online := obs.all()[0]
 		require.Len(t, online.SpanIDs, 1)
-		require.Equal(t, []SpanFlags{SpanFlagOwn | SpanFlagInstance}, online.SpanFlags)
+		require.Equal(t, []core.SpanFlags{core.SpanFlagOwn | core.SpanFlagInstance}, online.SpanFlags)
 	})
 
 	t.Run("depth roles follow the chain", func(t *testing.T) {
@@ -176,10 +177,27 @@ func TestSpanFlags(t *testing.T) {
 
 		inner := obs.last()
 		require.Len(t, inner.SpanIDs, 3)
-		require.Equal(t, []SpanFlags{
-			SpanFlagAncestor | SpanFlagInstance,
-			SpanFlagParent,
-			SpanFlagOwn,
+		require.Equal(t, []core.SpanFlags{
+			core.SpanFlagAncestor | core.SpanFlagInstance,
+			core.SpanFlagParent,
+			core.SpanFlagOwn,
+		}, inner.SpanFlags)
+	})
+
+	t.Run("depth four separates the instance from a plain ancestor", func(t *testing.T) {
+		obs := &captureObserver{}
+		ctx, _ := Instance(context.Background(), obs, "svc", "v1")
+		ctx, _ = Service(ctx, "auth")
+		ctx, _ = Span(ctx, "outer")
+		_, _ = Span(ctx, "inner")
+
+		inner := obs.last()
+		require.Len(t, inner.SpanIDs, 4)
+		require.Equal(t, []core.SpanFlags{
+			core.SpanFlagAncestor | core.SpanFlagInstance, // 12
+			core.SpanFlagAncestor,                         // 4 — the first
+			core.SpanFlagParent,                           // 2   middle ancestor
+			core.SpanFlagOwn,                              // 1
 		}, inner.SpanFlags)
 	})
 
@@ -189,9 +207,9 @@ func TestSpanFlags(t *testing.T) {
 		_, _ = Span(ctx, "child")
 
 		child := obs.last()
-		require.Equal(t, []SpanFlags{
-			SpanFlagParent | SpanFlagInstance,
-			SpanFlagOwn,
+		require.Equal(t, []core.SpanFlags{
+			core.SpanFlagParent | core.SpanFlagInstance,
+			core.SpanFlagOwn,
 		}, child.SpanFlags)
 	})
 
@@ -204,27 +222,27 @@ func TestSpanFlags(t *testing.T) {
 		sent := obs.last()
 
 		// The chain keeps its positional roles and the link is appended
-		// after it carrying SpanFlagLink and nothing else. Exactly one own.
-		require.Equal(t, []SpanFlags{
-			SpanFlagParent | SpanFlagInstance,
-			SpanFlagOwn,
-			SpanFlagLink,
+		// after it carrying core.SpanFlagLink and nothing else. Exactly one own.
+		require.Equal(t, []core.SpanFlags{
+			core.SpanFlagParent | core.SpanFlagInstance,
+			core.SpanFlagOwn,
+			core.SpanFlagLink,
 		}, sent.SpanFlags)
 		require.Equal(t, msgID, sent.SpanIDs[2])
 
 		var owns int
 		for _, f := range sent.SpanFlags {
-			if f&SpanFlagOwn != 0 {
+			if f&core.SpanFlagOwn != 0 {
 				owns++
 			}
 		}
 		require.Equal(t, 1, owns, "an event has exactly one own span")
 
-		// The Context is untouched: the next event carries the chain alone.
+		// The core.Context is untouched: the next event carries the chain alone.
 		Info(ctx, "still here")
-		require.Equal(t, []SpanFlags{
-			SpanFlagParent | SpanFlagInstance,
-			SpanFlagOwn,
+		require.Equal(t, []core.SpanFlags{
+			core.SpanFlagParent | core.SpanFlagInstance,
+			core.SpanFlagOwn,
 		}, obs.last().SpanFlags)
 	})
 
@@ -237,7 +255,7 @@ func TestSpanFlags(t *testing.T) {
 		InternalMessageReceived(ctx, msgID, "job")
 		recv := obs.last()
 		require.Equal(t, msgID, recv.SpanIDs[2])
-		require.Equal(t, SpanFlags(SpanFlagLink), recv.SpanFlags[2],
+		require.Equal(t, core.SpanFlags(core.SpanFlagLink), recv.SpanFlags[2],
 			"a link carries no positional role")
 	})
 
@@ -247,21 +265,21 @@ func TestSpanFlags(t *testing.T) {
 
 		linkID := Link(ctx, "job dispatch")
 		minted := obs.last()
-		require.Equal(t, EventTypeSpanLink(), minted.EventType)
+		require.Equal(t, core.EventTypeSpanLink(), minted.EventType)
 		require.Equal(t, linkID, minted.SpanIDs[1])
-		require.Equal(t, SpanFlags(SpanFlagLink), minted.SpanFlags[1])
+		require.Equal(t, core.SpanFlags(core.SpanFlagLink), minted.SpanFlags[1])
 
 		LinkTo(ctx, linkID, "job dispatch")
 		joined := obs.last()
-		require.Equal(t, EventTypeSpanLink(), joined.EventType)
+		require.Equal(t, core.EventTypeSpanLink(), joined.EventType)
 		require.Equal(t, linkID, joined.SpanIDs[1])
-		require.Equal(t, SpanFlags(SpanFlagLink), joined.SpanFlags[1])
+		require.Equal(t, core.SpanFlags(core.SpanFlagLink), joined.SpanFlags[1])
 	})
 
 	t.Run("a link already in the chain is not duplicated", func(t *testing.T) {
 		obs := &captureObserver{}
 		ctx, _ := Instance(context.Background(), obs, "svc", "v1")
-		own := From(ctx).CurrentSpanID()
+		own := core.From(ctx).CurrentSpanID()
 
 		// A duplicate span_id in one event would trip the unique
 		// (event_id, span_id) index and, because Postgres batches, take
@@ -270,7 +288,7 @@ func TestSpanFlags(t *testing.T) {
 
 		last := obs.last()
 		require.Len(t, last.SpanIDs, 1)
-		require.Equal(t, []SpanFlags{SpanFlagOwn | SpanFlagInstance}, last.SpanFlags)
+		require.Equal(t, []core.SpanFlags{core.SpanFlagOwn | core.SpanFlagInstance}, last.SpanFlags)
 	})
 
 	t.Run("SpanStart opens a span with a caller-supplied id", func(t *testing.T) {
@@ -285,7 +303,7 @@ func TestSpanFlags(t *testing.T) {
 		events := obs.all()
 		for _, e := range events[1:4] {
 			require.Equal(t, spanID, e.SpanIDs[1])
-			require.Equal(t, SpanFlags(SpanFlagOwn), e.SpanFlags[1],
+			require.Equal(t, core.SpanFlags(core.SpanFlagOwn), e.SpanFlags[1],
 				"a caller-supplied id is still this process's own span")
 		}
 	})
@@ -297,7 +315,7 @@ func TestSpanFlags(t *testing.T) {
 
 		online := obs.all()[0]
 		require.Equal(t, t.Name(), online.EventMessage)
-		require.Equal(t, []SpanFlags{SpanFlagOwn | SpanFlagInstance}, online.SpanFlags)
-		require.Equal(t, From(ctx).InstanceSpanID(), online.SpanIDs[0])
+		require.Equal(t, []core.SpanFlags{core.SpanFlagOwn | core.SpanFlagInstance}, online.SpanFlags)
+		require.Equal(t, core.From(ctx).InstanceSpanID(), online.SpanIDs[0])
 	})
 }
