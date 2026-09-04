@@ -58,9 +58,11 @@ func (d *Datasource) serveEventTypes(ctx context.Context, sender backend.CallRes
 }
 
 func (d *Datasource) serveServices(ctx context.Context, sender backend.CallResourceResponseSender) error {
+	// A service is an instance span; its name lives on the
+	// span:instance:online event, not on a column.
 	rows, err := d.pool.Query(ctx, `
 		SELECT DISTINCT service_name
-		  FROM witness.events
+		  FROM witness.instances
 		 WHERE service_name IS NOT NULL
 		 ORDER BY service_name`)
 	if err != nil {

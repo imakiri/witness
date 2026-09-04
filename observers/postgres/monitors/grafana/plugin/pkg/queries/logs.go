@@ -17,10 +17,31 @@ import (
 type LogsReq struct {
 	EventTypes []int64 `json:"eventTypes,omitempty"`
 	Service    string  `json:"service,omitempty"`
-	TraceID    string  `json:"traceID,omitempty"`
-	Caller     string  `json:"caller,omitempty"`
-	Message    string  `json:"message,omitempty"`
+	// RootSpanID narrows to one trace: the component walked from that root.
+	RootSpanID string `json:"rootSpanID,omitempty"`
+	// TraceID is the pre-v0.31 name of RootSpanID.
+	TraceID string `json:"traceID,omitempty"`
+	Caller  string `json:"caller,omitempty"`
+	Message string `json:"message,omitempty"`
+	// SpanID narrows to events whose *own* span this is — the span itself,
+	// not everything nested under it.
+	SpanID string `json:"spanID,omitempty"`
 }
+
+func (r *LogsReq) root() string {
+	if r.RootSpanID != "" {
+		return r.RootSpanID
+	}
+	return r.TraceID
+}
+
+// logsTraceFilter restricts to the component walked from one root. The walk
+// lives in a CTE, so the query is prefixed rather than joined.
+const logsTraceFilter = `e.event_id IN (
+    SELECT s.event_id
+      FROM trace_spans ts
+      JOIN witness.spans s ON s.span_id = ts.span_id AND s.span_flags & 1 <> 0
+)`
 
 func RunLogs(ctx context.Context, pool *pgxpool.Pool, r *LogsReq, tr backend.TimeRange, limit int) backend.DataResponse {
 	if r == nil {
@@ -28,7 +49,8 @@ func RunLogs(ctx context.Context, pool *pgxpool.Pool, r *LogsReq, tr backend.Tim
 	}
 
 	clauses := []string{"e.event_date >= $1 AND e.event_date <= $2"}
-	args := []any{tr.From, tr.To}
+	// event_date is `timestamp` without a zone; the observer writes UTC.
+	args := []any{tr.From.UTC(), tr.To.UTC()}
 
 	if len(r.EventTypes) > 0 {
 		args = append(args, r.EventTypes)
@@ -39,11 +61,13 @@ func RunLogs(ctx context.Context, pool *pgxpool.Pool, r *LogsReq, tr backend.Tim
 	}
 	if svc := strings.TrimSpace(r.Service); svc != "" {
 		args = append(args, svc)
-		clauses = append(clauses, fmt.Sprintf("e.service_name = $%d", len(args)))
+		clauses = append(clauses, fmt.Sprintf("ei.service_name = $%d", len(args)))
 	}
-	if tid := strings.TrimSpace(r.TraceID); tid != "" {
-		args = append(args, tid)
-		clauses = append(clauses, fmt.Sprintf("e.trace_id = $%d::uuid", len(args)))
+	if sid := strings.TrimSpace(r.SpanID); sid != "" {
+		args = append(args, sid)
+		clauses = append(clauses, fmt.Sprintf(`e.event_id IN (
+        SELECT event_id FROM witness.spans
+         WHERE span_id = $%d::uuid AND span_flags & 1 <> 0)`, len(args)))
 	}
 	if msg := strings.TrimSpace(r.Message); msg != "" {
 		args = append(args, "%"+msg+"%")
@@ -54,15 +78,28 @@ func RunLogs(ctx context.Context, pool *pgxpool.Pool, r *LogsReq, tr backend.Tim
 		clauses = append(clauses, fmt.Sprintf("e.event_caller ILIKE $%d", len(args)))
 	}
 
-	q := fmt.Sprintf(`
+	// The trace filter needs the recursive walk, whose seed is always $1, so
+	// it has to be the first argument. Build that variant separately.
+	prefix := ""
+	if root := strings.TrimSpace(r.root()); root != "" {
+		args = append([]any{[]string{root}}, args...)
+		for i := range clauses {
+			clauses[i] = shiftPlaceholders(clauses[i])
+		}
+		clauses = append(clauses, logsTraceFilter)
+		prefix = traceWalkCTE
+	}
+
+	q := fmt.Sprintf(`%s
 SELECT e.event_date, e.event_id, e.event_type, e.event_message, e.event_caller,
-       e.service_name, e.trace_id,
+       ei.service_name, ei.instance_span_id,
        COALESCE(erj.records, '{}'::jsonb)
   FROM witness.events e
   LEFT JOIN witness.event_records_json erj USING (event_id)
+  LEFT JOIN witness.event_instances    ei  ON ei.event_id = e.event_id
  WHERE %s
  ORDER BY e.event_date DESC
- LIMIT %d`, strings.Join(clauses, " AND "), limit)
+ LIMIT %d`, prefix, strings.Join(clauses, " AND "), limit)
 
 	rows, err := pool.Query(ctx, q, args...)
 	if err != nil {
@@ -76,21 +113,21 @@ SELECT e.event_date, e.event_id, e.event_type, e.event_message, e.event_caller,
 	ids := []string{}
 	callers := []string{}
 	serviceNames := []string{}
-	traceIDs := []string{}
+	instanceIDs := []string{}
 	labels := []json.RawMessage{}
 
 	for rows.Next() {
 		var (
-			d   time.Time
-			id  string
-			et  int64
-			m   string
-			c   string
-			svc *string
-			tid *string
-			rs  []byte
+			d    time.Time
+			id   string
+			et   int64
+			m    string
+			c    string
+			svc  *string
+			inst *string
+			rs   []byte
 		)
-		if err := rows.Scan(&d, &id, &et, &m, &c, &svc, &tid, &rs); err != nil {
+		if err := rows.Scan(&d, &id, &et, &m, &c, &svc, &inst, &rs); err != nil {
 			return backend.ErrDataResponse(backend.StatusInternal, "scan: "+err.Error())
 		}
 		times = append(times, d)
@@ -99,7 +136,7 @@ SELECT e.event_date, e.event_id, e.event_type, e.event_message, e.event_caller,
 		ids = append(ids, id)
 		callers = append(callers, c)
 		serviceNames = append(serviceNames, strOrEmpty(svc))
-		traceIDs = append(traceIDs, strOrEmpty(tid))
+		instanceIDs = append(instanceIDs, strOrEmpty(inst))
 		labels = append(labels, rs)
 	}
 
@@ -110,7 +147,7 @@ SELECT e.event_date, e.event_id, e.event_type, e.event_message, e.event_caller,
 		data.NewField("eventID", nil, ids),
 		data.NewField("caller", nil, callers),
 		data.NewField("service", nil, serviceNames),
-		data.NewField("traceID", nil, traceIDs),
+		data.NewField("instanceSpanID", nil, instanceIDs),
 		data.NewField("labels", nil, labels),
 	)
 	frame.Meta = &data.FrameMeta{PreferredVisualization: data.VisTypeLogs}

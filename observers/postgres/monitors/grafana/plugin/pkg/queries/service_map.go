@@ -10,40 +10,60 @@ import (
 )
 
 // ServiceMap renders the inter-service call graph for one trace as a
-// Grafana NodeGraph (two frames: nodes + edges). Nodes are services that
-// participated in the trace, edges are cross-service hops drawn from
-// witness.cross_service_edges where both endpoints fall inside the trace.
+// Grafana NodeGraph (two frames: nodes + edges). Nodes are the instances
+// that participated, edges are the links between them — a link_span_id
+// referenced from two different instances.
 type ServiceMap struct {
-	TraceID string `json:"traceID"`
+	RootSpanID string `json:"rootSpanID"`
+
+	// TraceID is the pre-v0.31 name of the same field.
+	TraceID string `json:"traceID,omitempty"`
 }
 
-const serviceMapNodesQuery = `
-SELECT ts.service_name,
-       ts.event_count::float8        AS event_count,
-       ts.error_count::float8        AS error_count,
-       EXTRACT(epoch FROM (ts.last_event_at - ts.first_event_at)) * 1000 AS duration_ms
-  FROM witness.trace_services ts
- WHERE ts.trace_id = $1::uuid
- ORDER BY ts.first_event_at ASC`
+func (sm *ServiceMap) root() string {
+	if sm == nil {
+		return ""
+	}
+	if sm.RootSpanID != "" {
+		return sm.RootSpanID
+	}
+	return sm.TraceID
+}
 
-const serviceMapEdgesQuery = `
-SELECT cse.parent_service_name,
-       cse.child_service_name,
+const serviceMapNodesQuery = traceWalkCTE + `,
+  trace_events AS (
+      SELECT e.event_id, e.event_type, e.event_date, ei.service_name
+        FROM trace_spans ts
+        JOIN witness.spans  s  ON s.span_id  = ts.span_id AND s.span_flags & 1 <> 0
+        JOIN witness.events e  ON e.event_id = s.event_id
+        LEFT JOIN witness.event_instances ei ON ei.event_id = e.event_id
+  )
+SELECT coalesce(service_name, '<unknown>')                          AS service_name,
+       count(*)::float8                                             AS event_count,
+       count(*) FILTER (WHERE event_type IN (` + errorEventTypes + `))::float8 AS error_count,
+       EXTRACT(epoch FROM (max(event_date) - min(event_date))) * 1000 AS duration_ms
+  FROM trace_events
+ GROUP BY service_name
+ ORDER BY min(event_date) ASC`
+
+const serviceMapEdgesQuery = traceWalkCTE + `
+SELECT le.from_service_name,
+       le.to_service_name,
        count(*)::float8 AS call_count
-  FROM witness.cross_service_edges cse
-  JOIN witness.events child  ON child.event_id = cse.child_event_id
- WHERE child.trace_id = $1::uuid
-   AND cse.parent_service_name IS NOT NULL
-   AND cse.child_service_name  IS NOT NULL
- GROUP BY cse.parent_service_name, cse.child_service_name`
+  FROM witness.link_edges le
+ WHERE le.from_span_id IN (SELECT span_id FROM trace_spans)
+   AND le.from_service_name IS NOT NULL
+   AND le.to_service_name   IS NOT NULL
+ GROUP BY le.from_service_name, le.to_service_name`
 
 // RunServiceMap is the entrypoint registered by the QueryData router.
 func RunServiceMap(ctx context.Context, pool *pgxpool.Pool, sm *ServiceMap) backend.DataResponse {
-	if sm == nil || sm.TraceID == "" {
-		return backend.ErrDataResponse(backend.StatusBadRequest, "service-map.traceID is required")
+	root := sm.root()
+	if root == "" {
+		return backend.ErrDataResponse(backend.StatusBadRequest, "service-map.rootSpanID is required")
 	}
 
-	nodesRows, err := pool.Query(ctx, serviceMapNodesQuery, sm.TraceID)
+	nodesRows, err := pool.Query(ctx, serviceMapNodesQuery, []string{root})
 	if err != nil {
 		return backend.ErrDataResponse(backend.StatusInternal, "service-map nodes: "+err.Error())
 	}
@@ -87,7 +107,7 @@ func RunServiceMap(ctx context.Context, pool *pgxpool.Pool, sm *ServiceMap) back
 	)
 	nodes.Meta = &data.FrameMeta{PreferredVisualization: data.VisTypeNodeGraph}
 
-	edgeRows, err := pool.Query(ctx, serviceMapEdgesQuery, sm.TraceID)
+	edgeRows, err := pool.Query(ctx, serviceMapEdgesQuery, []string{root})
 	if err != nil {
 		return backend.ErrDataResponse(backend.StatusInternal, "service-map edges: "+err.Error())
 	}

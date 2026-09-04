@@ -16,14 +16,18 @@ Apply to the Postgres database your `postgres.Observer` writes to:
 
 ```sh
 psql "$WITNESS_DB" \
-  -f ../migration.up.sql \
-  -f ../migration_v2.up.sql \
+  -f ../../../000_schema.up.sql \
   -f ../views.up.sql
 ```
 
-`migration_v2.up.sql` adds the `parent_trace_id` / `parent_span_id` columns,
-the `pg_trgm` extension, and the FTS / substring indexes that the search and
-trace queries rely on.
+`000_schema.up.sql` creates the tables, the `pg_trgm` extension and the FTS /
+substring indexes the search and trace queries rely on.
+
+Since v0.31 there is no `trace_id`: a trace is a connected component of the
+event↔span graph, walked at query time from a **root span id** (an
+entry-point span, listed by `witness.trace_roots`). The `traceID` field on
+every query type is kept as an alias for `rootSpanID`, so saved dashboards
+and links keep working.
 
 ## Layout
 

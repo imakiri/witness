@@ -177,7 +177,7 @@ function SearchEditor(props: {
         </InlineField>
       </InlineFieldRow>
       <InlineFieldRow>
-        <InlineField label="Trace ID" labelWidth={LBL} grow>
+        <InlineField label="Root span ID" labelWidth={LBL} grow tooltip="Entry-point span of the trace. Witness has no trace_id — the trace is the connected component walked from this span.">
           <Input
             value={value.traceID ?? ''}
             placeholder="uuid (root span_id of originating instance)"
@@ -259,7 +259,7 @@ function SearchEditor(props: {
 function TraceEditor(props: { value: TraceParams; onChange: (t: TraceParams) => void }) {
   return (
     <InlineFieldRow>
-      <InlineField label="Trace ID" labelWidth={LBL} grow>
+      <InlineField label="Root span ID" labelWidth={LBL} grow tooltip="Entry-point span of the trace. Witness has no trace_id — the trace is the connected component walked from this span.">
         <Input
           value={props.value.traceID ?? ''}
           placeholder="uuid of the originating instance's root span"
@@ -283,7 +283,7 @@ function LogsEditor(props: {
   return (
     <>
       <InlineFieldRow>
-        <InlineField label="Trace ID" labelWidth={LBL} grow>
+        <InlineField label="Root span ID" labelWidth={LBL} grow tooltip="Entry-point span of the trace. Witness has no trace_id — the trace is the connected component walked from this span.">
           <Input
             value={value.traceID ?? ''}
             placeholder="uuid — only events of this trace"
@@ -330,7 +330,7 @@ function LogsEditor(props: {
 function ServiceMapEditor(props: { value: ServiceMapParams; onChange: (sm: ServiceMapParams) => void }) {
   return (
     <InlineFieldRow>
-      <InlineField label="Trace ID" labelWidth={LBL} grow>
+      <InlineField label="Root span ID" labelWidth={LBL} grow tooltip="Entry-point span of the trace. Witness has no trace_id — the trace is the connected component walked from this span.">
         <Input
           value={props.value.traceID ?? ''}
           placeholder="uuid of the trace to render as service-graph"

@@ -235,14 +235,53 @@ link is exact.
 
 ### Postgres
 
-Apply `migration_v5.up.sql` then `migration_v6.up.sql`, or `schema.up.sql`
-on a fresh deploy. v5 adds `witness.spans.span_flags int8`; v6 drops
-`trace_id`, `parent_trace_id`, `parent_span_id`, `service_name` and their
-three indexes. Replacement queries are in v6's header comment.
+The migration files were collapsed into a single `000_schema.up.sql` /
+`000_schema.down.sql` pair — witness is pre-1.0 and this release removes
+four columns every earlier version wrote, so an incremental path to a shape
+nothing produces any more was not worth carrying.
 
-**The Grafana monitor under `observers/postgres/monitors/grafana` is broken
-by this and has not been ported** — its views, plugin queries and dashboard
-are all built on `trace_id` / `service_name`. See that directory's README.
+Apply `000_schema.up.sql` to an empty database. Upgrading an existing
+install in place: the header comment of that file has the `ALTER` block
+(drop `trace_id`, `parent_trace_id`, `parent_span_id`, `service_name`; add
+`witness.spans.span_flags int8`) plus the two new partial indexes. Rows
+written before it keep `span_flags = 0`, which reads as "the producer did
+not report roles" — they are not backfilled, because the ordering the roles
+are derived from was never stored.
+
+Replacement queries for the dropped columns:
+
+```sql
+-- every event of one instance (was: WHERE service_name = $1)
+SELECT e.* FROM witness.events e
+JOIN witness.spans s ON s.event_id = e.event_id
+WHERE s.span_id = $1 AND s.span_flags & 8 <> 0;
+
+-- both sides of a hand-off (was: the parent_trace_id join)
+SELECT e.* FROM witness.events e
+JOIN witness.spans s ON s.event_id = e.event_id
+WHERE s.span_id = $1;
+```
+
+`event_date` also lost its `DEFAULT NOW()`. It was dead — `queueEvent`
+always supplies the value — and would have lied if it ever fired, stamping
+ingest time onto an event's time dimension.
+
+### Grafana
+
+The monitor was rebuilt on `span_flags`. `cross_service_edges` and
+`trace_services` are replaced by `span_links` / `link_edges` and by
+`instances` / `event_instances`; `span_children` now reads the parent off
+`span_flags & 2` instead of guessing it from timestamps; a new `trace_roots`
+view gives the UI an entry point to walk from.
+
+A trace has no id, so the panels walk its component at query time from a
+**root span id**. The plugin's query types accept `rootSpanID` and keep
+`traceID` as an alias, so saved dashboards and links keep working; the
+dashboard variable is still called `selected_trace` and now holds that root
+span id.
+
+Re-apply `monitors/grafana/views.up.sql` — running `views.down.sql` first
+also drops the two views that no longer exist.
 
 ## v0.27 — `Observer.Observe` takes an `Event` struct
 

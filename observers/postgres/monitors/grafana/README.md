@@ -26,14 +26,12 @@ observers/postgres/monitors/grafana/
 
 ```sh
 # 1. Apply schema (run once against your witness DB)
-#    Fresh deploy: one consolidated schema file.
 psql "$WITNESS_DB" \
-  -f ../../schema.up.sql \
+  -f ../../000_schema.up.sql \
   -f ./views.up.sql
 
-# Upgrading an existing install that was created with the original
-# migration.up.sql? Run the incremental patches instead:
-#   psql "$WITNESS_DB" -f ../../migration_v2.up.sql -f ../../migration_v3.up.sql -f ./views.up.sql
+# Re-applying over an install from before v0.31? Run views.down.sql first —
+# it also drops cross_service_edges and trace_services, which are gone.
 
 # 2. Start Grafana with the dashboards & datasource provisioned in.
 docker run -d --name witness-grafana \
@@ -58,7 +56,7 @@ that `witness.Trace(ctx, "handle-work")` mints on the entry side and that
 `witness.InstanceContinue(..., parentTraceID, ...)` adopts on the receiver
 side. With this column populated, every panel scopes to a single request
 by setting the dashboard's `request_filter` toggle to `on` and selecting a
-`trace_id` from the dropdown. Before `migration_v3`, request membership
+`trace_id` from the dropdown. Before the `trace_id` column existed, request membership
 had to be reconstructed at query time by walking `witness.spans` and
 `witness.cross_service_edges`; the dashboard uses neither once `trace_id`
 is present.
@@ -86,21 +84,3 @@ reads `witness.events` directly.
   `"table"` and let the Logs panel auto-detect the `time`/`body` columns.
 
 ---
-
-## ⚠️ Broken as of v0.32
-
-This monitor — `views.up.sql`, the datasource plugin and the dashboard — is
-built on `witness.events.trace_id` and `witness.events.service_name`, both
-of which `migration_v6` drops. Every panel that groups by trace or service,
-the L1/L2 navigation, the service map and the search queries will fail
-against a v6 schema.
-
-It has not been ported yet. The port is not a rename: a "trace" is no
-longer a column but a connected component of the event↔span graph, so
-`trace_services`, `cross_service_edges` and the plugin's `traces.go` /
-`trace.go` / `service_map.go` need recursive CTEs over `witness.spans`,
-and "which service" becomes a join to the span carrying `span_flags & 8`
-(instance) and reading its `span:instance:online` event message.
-
-Until then, either stay on the v5 schema or use this directory as a
-reference rather than deploying it.

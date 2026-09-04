@@ -11,64 +11,57 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Trace requests the reconstruction of a single distributed trace rooted at
-// TraceID (the originating instance's root span_id).
+// Trace requests the reconstruction of a single distributed trace. RootSpanID
+// is the entry-point span listed by the L1 traces panel; the trace is its
+// connected component, walked at query time — witness has no trace_id.
 type Trace struct {
-	TraceID string `json:"traceID"`
+	RootSpanID string `json:"rootSpanID"`
+
+	// TraceID is the pre-v0.31 name of the same field, kept so dashboards
+	// and saved links that predate the rename keep working.
+	TraceID string `json:"traceID,omitempty"`
 }
 
-// traceCTE walks the trace by alternating between (a) co-occurrence in
-// witness.spans (other spans active inside an event that already includes
-// a known span_id) and (b) cross_service_edges (a child instance hung off
-// an upstream span). Postgres allows only one self-reference in a recursive
-// term, so both expansions are unioned into a single `edges` view first.
+func (t *Trace) root() string {
+	if t == nil {
+		return ""
+	}
+	if t.RootSpanID != "" {
+		return t.RootSpanID
+	}
+	return t.TraceID
+}
+
+// traceQuery reconstructs the span tree of one trace.
 //
-// In the current witness design InstanceContinue adopts the upstream root
-// span_id as its own root, so co-occurrence walking is usually enough — the
-// cross-service edge is included for robustness against future variants and
-// for the (parent_trace_id NOT IN trace_spans) edge case.
-const traceCTE = `
-WITH RECURSIVE
-  edges AS (
-      SELECT s1.span_id AS from_id, s2.span_id AS to_id
-        FROM witness.spans s1
-        JOIN witness.spans s2 ON s1.event_id = s2.event_id
-    UNION ALL
-      SELECT cse.parent_trace_id, cse.child_root_span_id
-        FROM witness.cross_service_edges cse
-  ),
-  trace_spans AS (
-      SELECT $1::uuid AS span_id
-    UNION
-      SELECT e.to_id
-        FROM edges e
-        JOIN trace_spans ts ON ts.span_id = e.from_id
-  ),
-  -- Direct parent: prefer cross-service edge if any, otherwise span_children.
+// The parent of each span is stated outright by span_flags & 2 on its start
+// event (witness.span_children); a span reached across a process boundary is
+// re-parented onto the sending span, so the OTel-style tree stays connected
+// where witness records a link.
+const traceQuery = traceWalkCTE + `,
   parents AS (
-      SELECT child_root_span_id AS span_id, parent_span_id, 'cross'::text AS kind
-        FROM witness.cross_service_edges
-       WHERE child_root_span_id IN (SELECT span_id FROM trace_spans)
+      SELECT to_span_id AS span_id, from_span_id AS parent_span_id, 0 AS pref
+        FROM witness.link_edges
+       WHERE to_span_id IN (SELECT span_id FROM trace_spans)
     UNION ALL
-      SELECT child_span_id, parent_span_id, 'co'::text
+      SELECT child_span_id, parent_span_id, 1
         FROM witness.span_children
        WHERE child_span_id IN (SELECT span_id FROM trace_spans)
   ),
   parent_picked AS (
       SELECT DISTINCT ON (span_id) span_id, parent_span_id
         FROM parents
-       ORDER BY span_id, CASE kind WHEN 'cross' THEN 0 ELSE 1 END
+       ORDER BY span_id, pref
   ),
-  -- Records aggregated for each span's start event become OTel-style tags.
+  -- Records on a span's start event become OTel-style tags.
   span_tags AS (
-      SELECT sp.span_id, erj.records
-        FROM witness.span_pairs sp
-        LEFT JOIN witness.event_records_json erj
-          ON erj.event_id = (SELECT start_event_id FROM witness.span_starts WHERE span_id = sp.span_id)
-       WHERE sp.span_id IN (SELECT span_id FROM trace_spans)
+      SELECT ss.span_id, erj.records
+        FROM witness.span_starts ss
+        JOIN witness.event_records_json erj ON erj.event_id = ss.start_event_id
+       WHERE ss.span_id IN (SELECT span_id FROM trace_spans)
   ),
-  -- Logs attached to a span = events whose chain contains this span_id and
-  -- whose type is in log:* range.
+  -- Logs of a span = log events whose *own* span it is. Ancestors are
+  -- excluded: span_flags tells "in this span" from "under it".
   span_logs AS (
       SELECT s.span_id,
              jsonb_agg(jsonb_build_object(
@@ -79,9 +72,9 @@ WITH RECURSIVE
                               )
              ) ORDER BY e.event_date) AS logs_json
         FROM witness.events e
-        JOIN witness.spans  s ON s.event_id = e.event_id
+        JOIN witness.spans  s ON s.event_id = e.event_id AND s.span_flags & 1 <> 0
        WHERE s.span_id IN (SELECT span_id FROM trace_spans)
-         AND e.event_type IN (1, 10, 11, 12, 13, 14, 100, 101, 102, 103, 104)
+         AND e.event_type IN (` + logEventTypes + `)
        GROUP BY s.span_id
   )
 SELECT sp.span_id,
@@ -107,11 +100,12 @@ type tagKV struct {
 }
 
 func RunTrace(ctx context.Context, pool *pgxpool.Pool, t *Trace) backend.DataResponse {
-	if t == nil || t.TraceID == "" {
-		return backend.ErrDataResponse(backend.StatusBadRequest, "trace.traceID is required")
+	root := t.root()
+	if root == "" {
+		return backend.ErrDataResponse(backend.StatusBadRequest, "trace.rootSpanID is required")
 	}
 
-	rows, err := pool.Query(ctx, traceCTE, t.TraceID)
+	rows, err := pool.Query(ctx, traceQuery, []string{root})
 	if err != nil {
 		return backend.ErrDataResponse(backend.StatusInternal, "trace query: "+err.Error())
 	}
@@ -141,7 +135,7 @@ func RunTrace(ctx context.Context, pool *pgxpool.Pool, t *Trace) backend.DataRes
 		if err := rows.Scan(&spanID, &parentID, &name, &service, &startAt, &dur, &recsRaw, &logsRaw); err != nil {
 			return backend.ErrDataResponse(backend.StatusInternal, "scan: "+err.Error())
 		}
-		traceIDs = append(traceIDs, t.TraceID)
+		traceIDs = append(traceIDs, root)
 		spanIDs = append(spanIDs, spanID)
 		parentSpanIDs = append(parentSpanIDs, strOrEmpty(parentID))
 		operations = append(operations, strOrEmpty(name))

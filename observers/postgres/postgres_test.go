@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-//go:embed schema.up.sql
+//go:embed 000_schema.up.sql
 var schemaSQL string
 
 // stubConn is a no-op connection used by lifecycle / race / backpressure tests

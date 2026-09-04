@@ -1,3 +1,10 @@
+> **Historical log — superseded.** This documents the `feat/otlp` iteration
+> that made `service_name` first-class. v0.31 removed `service_name`,
+> `trace_id` and the `parent_*` columns entirely and collapsed every
+> migration file into `000_schema.up.sql`. Kept for the Observer-hardening
+> rationale; every schema and API claim below is out of date. See the
+> repository root's `MIGRATION.md`.
+
 # Migration log — `service_name` + Grafana drill-down + Observer hardening
 
 Изменения, накопленные на ветке `feat/otlp` поверх предыдущей итерации Postgres-наблюдателя. Состоит из четырёх логических фаз; результат — `service_name` как first-class-данные, надёжный батчинг-наблюдатель, плагин с native-tracing и Grafana-дашборд с трёхуровневым drill-down (trace → service → span → events).
