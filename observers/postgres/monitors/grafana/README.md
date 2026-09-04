@@ -84,3 +84,23 @@ reads `witness.events` directly.
   filter dropdown surfaces it.
 * The PostgreSQL datasource ignores `format: "trace"` and `"logs"` — use
   `"table"` and let the Logs panel auto-detect the `time`/`body` columns.
+
+---
+
+## ⚠️ Broken as of v0.32
+
+This monitor — `views.up.sql`, the datasource plugin and the dashboard — is
+built on `witness.events.trace_id` and `witness.events.service_name`, both
+of which `migration_v6` drops. Every panel that groups by trace or service,
+the L1/L2 navigation, the service map and the search queries will fail
+against a v6 schema.
+
+It has not been ported yet. The port is not a rename: a "trace" is no
+longer a column but a connected component of the event↔span graph, so
+`trace_services`, `cross_service_edges` and the plugin's `traces.go` /
+`trace.go` / `service_map.go` need recursive CTEs over `witness.spans`,
+and "which service" becomes a join to the span carrying `span_flags & 8`
+(instance) and reading its `span:instance:online` event message.
+
+Until then, either stay on the v5 schema or use this directory as a
+reference rather than deploying it.

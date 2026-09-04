@@ -1,9 +1,9 @@
--- Witness Postgres schema — consolidated v1+v2+v3+v4.
+-- Witness Postgres schema — consolidated v1..v6.
 --
 -- Apply this on fresh deployments instead of stacking migration.up.sql,
--- migration_v2.up.sql, migration_v3.up.sql and migration_v4.up.sql in
--- order. Existing installations should keep applying the incremental
--- migration_v*.up.sql files.
+-- migration_v2.up.sql ... migration_v6.up.sql in order. Existing
+-- installations should keep applying the incremental migration_v*.up.sql
+-- files.
 --
 -- After this file, apply observers/postgres/monitors/grafana/views.up.sql to
 -- materialize the Grafana views.
@@ -18,30 +18,11 @@ CREATE TABLE witness.events
     event_date      timestamp NOT NULL DEFAULT NOW(),
     event_type      int8      NOT NULL,
     event_message   varchar   NOT NULL,
-    event_caller    varchar   NOT NULL,
-    -- trace_id is the logical request identifier — same across every span
-    -- produced while handling one request, including cross-service hops.
-    trace_id        uuid      NULL,
-    -- parent_trace_id / parent_span_id pin a span:instance:online event to
-    -- an externally-provided trace context (typically from a W3C
-    -- traceparent header). Non-null only on InstanceContinue's online event.
-    parent_trace_id uuid      NULL,
-    parent_span_id  uuid      NULL,
-    -- service_name is the local instance's name (the string passed to
-    -- witness.Instance / witness.InstanceContinue). Every event emitted by
-    -- one instance shares the same service_name; cross-service hops reset
-    -- it on the receiver. NULL when an event was emitted from a Context
-    -- that never went through an Instance constructor.
-    service_name    varchar(127) NULL
+    event_caller    varchar   NOT NULL
 );
 
 CREATE INDEX events_event_lookup
     ON witness.events (event_date DESC, event_type, event_message);
-
--- Find every child instance whose upstream parent lives in trace X.
-CREATE INDEX events_parent_trace_lookup
-    ON witness.events (parent_trace_id, parent_span_id)
-    WHERE parent_trace_id IS NOT NULL;
 
 -- Full-text and trigram search over event_message. tsvector handles tokenised
 -- search; pg_trgm is the fallback for short substrings (ILIKE).
@@ -51,26 +32,38 @@ CREATE INDEX events_message_fts
 CREATE INDEX events_message_trgm
     ON witness.events USING GIN (event_message gin_trgm_ops);
 
--- Per-request lookup: WHERE trace_id = $1 ORDER BY event_date DESC.
-CREATE INDEX events_trace_id_idx
-    ON witness.events (trace_id, event_date DESC)
-    WHERE trace_id IS NOT NULL;
-
--- Per-service lookup, optionally narrowed by trace_id via events_trace_id_idx.
-CREATE INDEX events_service_lookup
-    ON witness.events (service_name, event_date DESC)
-    WHERE service_name IS NOT NULL;
-
 CREATE TABLE witness.spans
 (
-    event_id uuid NOT NULL REFERENCES witness.events (event_id),
-    span_id  uuid NOT NULL
+    event_id   uuid NOT NULL REFERENCES witness.events (event_id),
+    span_id    uuid NOT NULL,
+    -- span_flags is a bitmask of the roles this span_id plays in this
+    -- event. Go holds the span chain ordered root -> leaf; the flags carry
+    -- that structure into SQL, which otherwise sees an unordered bag.
+    --   1  own       — the event happened directly in this span (exactly one)
+    --   2  parent    — direct parent of the own span
+    --   4  ancestor  — an enclosing scope above the parent
+    --   8  instance  — root span of the process that emitted the event
+    --   16 link      — a span the local process did not mint (wire span_id,
+    --                  or a msgID shared with the peer of a hand-off)
+    -- The roles combine: an instance's own online event is 1|8, a message
+    -- hand-off's msgID is 1|16. 0 means the producer did not report roles.
+    span_flags int8 NOT NULL DEFAULT 0
 );
 
 CREATE UNIQUE INDEX spans_lookup ON witness.spans (event_id DESC, span_id DESC);
 
 -- Reverse direction: pasted span_id → events that mention it.
 CREATE INDEX spans_by_span ON witness.spans (span_id);
+
+-- Emitting instance of an event, and every event of one instance.
+CREATE INDEX spans_instance_lookup
+    ON witness.spans (span_id, event_id)
+    WHERE span_flags & 8 <> 0;
+
+-- Events located directly in a span, excluding its descendants.
+CREATE INDEX spans_own_lookup
+    ON witness.spans (span_id, event_id)
+    WHERE span_flags & 1 <> 0;
 
 CREATE TABLE witness.records
 (

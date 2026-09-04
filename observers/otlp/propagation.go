@@ -30,20 +30,20 @@ type Carrier interface {
 // Inject writes a W3C traceparent header.
 //
 // Deprecated: use propagation.Inject with an http.Header.
-func Inject(carrier Carrier, rootSpanID, msgSpanID uuid.UUID) {
+func Inject(carrier Carrier, spanID uuid.UUID) {
 	if h, ok := carrier.(http.Header); ok {
-		propagation.Inject(h, rootSpanID, msgSpanID)
+		propagation.Inject(h, spanID)
 		return
 	}
 	h := http.Header{}
-	propagation.Inject(h, rootSpanID, msgSpanID)
+	propagation.Inject(h, spanID)
 	carrier.Set(TraceparentHeader, h.Get(TraceparentHeader))
 }
 
 // Extract reads a W3C traceparent header.
 //
 // Deprecated: use propagation.Extract with an http.Header.
-func Extract(carrier Carrier) (traceID uuid.UUID, msgSpanID uuid.UUID, ok bool) {
+func Extract(carrier Carrier) (parentSpanID uuid.UUID, ok bool) {
 	if h, ok := carrier.(http.Header); ok {
 		return propagation.Extract(h)
 	}

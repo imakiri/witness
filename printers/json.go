@@ -3,7 +3,6 @@ package printers
 import (
 	"fmt"
 	"github.com/go-faster/jx"
-	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"io"
 	"time"
@@ -26,11 +25,6 @@ func NewJSON(options ...JSONOption) (*JSON, error) {
 
 func (j *JSON) encode(e *jx.Encoder, event witness.Event, flags witness.PrintFlags) {
 	e.Obj(func(e *jx.Encoder) {
-		if event.TraceID != uuid.Nil {
-			e.Field("trace_id", func(e *jx.Encoder) {
-				e.Base64(event.TraceID.Bytes())
-			})
-		}
 		if flags&witness.PrintEventID != witness.PrintNone {
 			e.Field("event_id", func(e *jx.Encoder) {
 				e.Base64(event.EventID.Bytes())

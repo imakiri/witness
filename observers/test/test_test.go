@@ -16,8 +16,8 @@ func Test(t *testing.T) {
 	observer, err := test.NewObserver(t, printer, test.WithFailOnError())
 	require.NoError(t, err)
 
-	wtx := witness.NewTestContext(t, observer)
-	ctx := wtx.To(t.Context())
+	ctx, finish := witness.Test(t.Context(), t, observer)
+	defer finish()
 
 	witness.Info(ctx, "TEST INFO MSG", record.String("foo", "bar"), record.Number("buzz", 17))
 	witness.Info(ctx, "TEST INFO MSG", record.String("foo", "bar"), record.Number("buzz", 17))

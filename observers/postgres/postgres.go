@@ -24,7 +24,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -246,41 +245,30 @@ func (o *Observer) flush(batch *pgx.Batch) {
 	}
 }
 
-func nullUUID(u uuid.UUID) any {
-	if u == uuid.Nil {
-		return nil
-	}
-	return u
-}
-
-func nullString(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
 func queueEvent(batch *pgx.Batch, event witness.Event) {
 	// Normalize to UTC. The events schema stores event_date as `timestamp
 	// without time zone`; mixing wall-clock zones makes Grafana's UTC-based
 	// $__timeFilter compare apples to oranges and silently filters
 	// everything out.
 	batch.Queue(`INSERT INTO witness.events
-			(event_id, event_date, event_type, event_message, event_caller,
-			 trace_id, parent_trace_id, parent_span_id, service_name)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+			(event_id, event_date, event_type, event_message, event_caller)
+		VALUES ($1, $2, $3, $4, $5)`,
 		event.EventID, event.EventDate.UTC(), event.EventType.Value(), event.EventMessage, event.EventCaller,
-		nullUUID(event.TraceID), nullUUID(event.ParentTraceID), nullUUID(event.ParentSpanID),
-		nullString(event.ServiceName),
 	).Exec(func(ct pgconn.CommandTag) error {
 		if !ct.Insert() || ct.RowsAffected() != 1 {
 			return fmt.Errorf("failed to insert event to the database: %s", ct)
 		}
 		return nil
 	})
-	for _, spanID := range event.SpanIDs {
-		batch.Queue("INSERT INTO witness.spans (event_id, span_id) VALUES ($1, $2)",
-			event.EventID, spanID).Exec(func(ct pgconn.CommandTag) error {
+	for i, spanID := range event.SpanIDs {
+		// SpanFlags is parallel to SpanIDs but may be nil or short on
+		// hand-built events; 0 is the schema's "roles unknown".
+		var flags witness.SpanFlags
+		if i < len(event.SpanFlags) {
+			flags = event.SpanFlags[i]
+		}
+		batch.Queue("INSERT INTO witness.spans (event_id, span_id, span_flags) VALUES ($1, $2, $3)",
+			event.EventID, spanID, int64(flags)).Exec(func(ct pgconn.CommandTag) error {
 			if !ct.Insert() || ct.RowsAffected() != 1 {
 				return fmt.Errorf("failed to insert span to the database: %s", ct)
 			}

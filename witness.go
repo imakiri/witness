@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/gofrs/uuid/v5"
 	"slices"
-	"time"
+	"testing"
 )
 
 func appendError(records []Record, err error) []Record {
@@ -19,12 +19,14 @@ func appendError(records []Record, err error) []Record {
 	})
 }
 
-func Observe(ctx context.Context, eventID uuid.UUID, eventDate time.Time, eventType EventType, eventName string, records ...Record) {
+// Observe emits one event of an arbitrary type in the ctx's current span.
+// Span roles are derived from the chain; see Context.Observe.
+func Observe(ctx context.Context, eventType EventType, eventName string, records ...Record) {
 	var c = From(ctx)
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(eventID, eventDate, eventType, eventName, caller(1), records...)
+	c.Observe(eventType, eventName, caller(1), records...)
 }
 
 func Info(ctx context.Context, msg string, records ...Record) {
@@ -32,7 +34,7 @@ func Info(ctx context.Context, msg string, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), msg, caller(1), records...)
+	c.Observe(EventTypeLogInfo(), msg, caller(1), records...)
 }
 
 func Warn(ctx context.Context, msg string, records ...Record) {
@@ -40,7 +42,7 @@ func Warn(ctx context.Context, msg string, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogWarn(), msg, caller(1), records...)
+	c.Observe(EventTypeLogWarn(), msg, caller(1), records...)
 }
 
 func Debug(ctx context.Context, msg string, records ...Record) {
@@ -48,7 +50,7 @@ func Debug(ctx context.Context, msg string, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogDebug(), msg, caller(1), records...)
+	c.Observe(EventTypeLogDebug(), msg, caller(1), records...)
 }
 
 func Error(ctx context.Context, msg string, err error, records ...Record) {
@@ -56,7 +58,7 @@ func Error(ctx context.Context, msg string, err error, records ...Record) {
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1), appendError(records, err)...)
+	c.Observe(EventTypeLogError(), msg, caller(1), appendError(records, err)...)
 }
 
 func ErrorRF(ctx context.Context, msg string, err error, records ...Record) error {
@@ -64,7 +66,7 @@ func ErrorRF(ctx context.Context, msg string, err error, records ...Record) erro
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), msg, caller(1), appendError(records, err)...)
+	c.Observe(EventTypeLogError(), msg, caller(1), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
@@ -77,10 +79,10 @@ func ErrorOrInfo(ctx context.Context, okMsg, errMsg string, err error, records .
 		c.t.Helper()
 	}
 	if err != nil {
-		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogError(), errMsg, caller(1), appendError(records, err)...)
+		c.Observe(EventTypeLogError(), errMsg, caller(1), appendError(records, err)...)
 	} else {
 
-		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), okMsg, caller(1), records...)
+		c.Observe(EventTypeLogInfo(), okMsg, caller(1), records...)
 	}
 }
 
@@ -89,7 +91,7 @@ func ErrorStorage(ctx context.Context, msg string, err error, records ...Record)
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorStorage(), msg, caller(1), appendError(records, err)...)
+	c.Observe(EventTypeLogErrorStorage(), msg, caller(1), appendError(records, err)...)
 }
 
 func ErrorStorageF(ctx context.Context, msg string, err error, records ...Record) error {
@@ -97,7 +99,7 @@ func ErrorStorageF(ctx context.Context, msg string, err error, records ...Record
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorStorage(), msg, caller(1), appendError(records, err)...)
+	c.Observe(EventTypeLogErrorStorage(), msg, caller(1), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
@@ -109,7 +111,7 @@ func ErrorNetwork(ctx context.Context, msg string, err error, records ...Record)
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorNetwork(), msg, caller(1), appendError(records, err)...)
+	c.Observe(EventTypeLogErrorNetwork(), msg, caller(1), appendError(records, err)...)
 }
 
 func ErrorNetworkF(ctx context.Context, msg string, err error, records ...Record) error {
@@ -117,7 +119,7 @@ func ErrorNetworkF(ctx context.Context, msg string, err error, records ...Record
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorNetwork(), msg, caller(1), appendError(records, err)...)
+	c.Observe(EventTypeLogErrorNetwork(), msg, caller(1), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
@@ -129,7 +131,7 @@ func ErrorExternal(ctx context.Context, msg string, err error, records ...Record
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorExternal(), msg, caller(1), appendError(records, err)...)
+	c.Observe(EventTypeLogErrorExternal(), msg, caller(1), appendError(records, err)...)
 }
 
 func ErrorExternalF(ctx context.Context, msg string, err error, records ...Record) error {
@@ -137,7 +139,7 @@ func ErrorExternalF(ctx context.Context, msg string, err error, records ...Recor
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorExternal(), msg, caller(1), appendError(records, err)...)
+	c.Observe(EventTypeLogErrorExternal(), msg, caller(1), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
@@ -149,7 +151,7 @@ func ErrorInternal(ctx context.Context, msg string, err error, records ...Record
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorInternal(), msg, caller(1), appendError(records, err)...)
+	c.Observe(EventTypeLogErrorInternal(), msg, caller(1), appendError(records, err)...)
 }
 
 func ErrorInternalF(ctx context.Context, msg string, err error, records ...Record) error {
@@ -157,54 +159,30 @@ func ErrorInternalF(ctx context.Context, msg string, err error, records ...Recor
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogErrorInternal(), msg, caller(1), appendError(records, err)...)
+	c.Observe(EventTypeLogErrorInternal(), msg, caller(1), appendError(records, err)...)
 	if err != nil {
 		return fmt.Errorf("%s: %w", msg, err)
 	}
 	return errors.New(msg)
 }
 
-// withChildSpan returns a Context whose chain has one more span_id but the
-// same observer, trace_id and service_name as the parent. Used by Span /
-// Service / Worker and by any other helper that opens a new span under
-// the current request.
+// withChildSpan returns a Context whose chain has spanID appended as the
+// new current span; everything else (observer, t) is inherited. Used by
+// Span / Service / Worker / SpanStart — every span in a chain is one this
+// process owns.
+//
+// A span_id already in the chain is not appended twice: re-opening a span
+// you are already inside is a no-op, and a duplicate would violate the
+// unique (event_id, span_id) index in Postgres — which, because the
+// observer batches, would discard every event queued alongside it.
 func (c Context) withChildSpan(spanID uuid.UUID) Context {
+	if slices.Contains(c.spanIDs, spanID) {
+		return c
+	}
 	return Context{
-		t:           c.t,
-		observer:    c.observer,
-		spanIDs:     append(slices.Clone(c.spanIDs), spanID),
-		traceID:     c.traceID,
-		serviceName: c.serviceName,
-	}
-}
-
-// Trace opens a child span like Span, but also mints a fresh trace_id and
-// scopes it to that span and its descendants. Use this at request-entry
-// boundaries (HTTP handler, queue consumer) when you want a per-request
-// trace_id distinct from the surrounding Instance's trace_id. Inside the
-// returned context, every Span/Info/Error inherits this fresh trace_id;
-// propagation.Inject(req.Header, c.TraceID(), c.CurrentSpanID()) carries
-// it across to downstream services, where InstanceContinue adopts it.
-func Trace(ctx context.Context, spanName string, records ...Record) (context.Context, Finish) {
-	var at = caller(1)
-	parent := From(ctx)
-	newSpan := uuid.Must(uuid.NewV7())
-	nc := Context{
-		t:           parent.t,
-		observer:    parent.observer,
-		spanIDs:     append(slices.Clone(parent.spanIDs), newSpan),
-		traceID:     newSpan,
-		serviceName: parent.serviceName,
-	}
-	if nc.t != nil {
-		nc.t.Helper()
-	}
-	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, at, records...)
-	return nc.To(ctx), func(records ...Record) {
-		if nc.t != nil {
-			nc.t.Helper()
-		}
-		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, at, records...)
+		t:        c.t,
+		observer: c.observer,
+		spanIDs:  append(slices.Clone(c.spanIDs), spanID),
 	}
 }
 
@@ -214,29 +192,44 @@ func Span(ctx context.Context, spanName string, records ...Record) (context.Cont
 	if nc.t != nil {
 		nc.t.Helper()
 	}
-	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, at, records...)
+	nc.Observe(EventTypeSpanStart(), spanName, at, records...)
 	return nc.To(ctx), func(records ...Record) {
 		if nc.t != nil {
 			nc.t.Helper()
 		}
-		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, at, records...)
+		nc.Observe(EventTypeSpanFinish(), spanName, at, records...)
 	}
 }
 
-func SpanStart(ctx context.Context, spanID uuid.UUID, spanName string, records ...Record) {
+// SpanStart is Span with the span_id supplied by the caller instead of
+// minted here — for when the id has to exist before the span does, because
+// it is going into a message envelope or a header. The span is this
+// process's own, like any other: to point at a span another process owns,
+// reference it with Link / LinkTo, do not open it.
+func SpanStart(ctx context.Context, spanID uuid.UUID, spanName string, records ...Record) (context.Context, Finish) {
+	var at = caller(1)
 	var c = From(ctx).withChildSpan(spanID)
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanStart(), spanName, caller(1), records...)
+	c.Observe(EventTypeSpanStart(), spanName, at, records...)
+	return c.To(ctx), func(records ...Record) {
+		if c.t != nil {
+			c.t.Helper()
+		}
+		c.Observe(EventTypeSpanFinish(), spanName, at, records...)
+	}
 }
 
+// SpanFinish closes a span by id, for the shape where start and finish are
+// not lexically paired and the Finish closure cannot be carried between
+// them. Prefer the Finish that SpanStart returned.
 func SpanFinish(ctx context.Context, spanID uuid.UUID, spanName string, records ...Record) {
 	var c = From(ctx).withChildSpan(spanID)
 	if c.t != nil {
 		c.t.Helper()
 	}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanFinish(), spanName, caller(1), records...)
+	c.Observe(EventTypeSpanFinish(), spanName, caller(1), records...)
 }
 
 // Service is Span with span:service:start/finish event types.
@@ -246,12 +239,12 @@ func Service(ctx context.Context, serviceName string, records ...Record) (contex
 	if nc.t != nil {
 		nc.t.Helper()
 	}
-	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanServiceStart(), serviceName, at, records...)
+	nc.Observe(EventTypeSpanServiceStart(), serviceName, at, records...)
 	return nc.To(ctx), func(records ...Record) {
 		if nc.t != nil {
 			nc.t.Helper()
 		}
-		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanServiceFinish(), serviceName, at, records...)
+		nc.Observe(EventTypeSpanServiceFinish(), serviceName, at, records...)
 	}
 }
 
@@ -262,109 +255,142 @@ func Worker(ctx context.Context, workerName string, records ...Record) (context.
 	if nc.t != nil {
 		nc.t.Helper()
 	}
-	nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanWorkerStart(), workerName, at, records...)
+	nc.Observe(EventTypeSpanWorkerStart(), workerName, at, records...)
 	return nc.To(ctx), func(records ...Record) {
 		if nc.t != nil {
 			nc.t.Helper()
 		}
-		nc.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanWorkerFinish(), workerName, at, records...)
+		nc.Observe(EventTypeSpanWorkerFinish(), workerName, at, records...)
 	}
 }
 
-// InternalMessageSent emits a span:internal_message:sent event carrying msgID
-// in span_ids. Pair it with InternalMessageReceived on the recipient side; a
-// query for the shared msgID reconnects both sides of the hand-off.
-func InternalMessageSent(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
-	From(ctx).withChildSpan(msgID).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInternalMessageSent(), msgName, caller(1), records...)
-}
-
-func InternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
-	From(ctx).withChildSpan(msgID).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInternalMessageReceived(), msgName, caller(1), records...)
-}
-
-// ExternalMessageSent is InternalMessageSent across a witness-system boundary
-// (outbound HTTP, third-party RPC, etc).
-func ExternalMessageSent(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
-	From(ctx).withChildSpan(msgID).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanExternalMessageSent(), msgName, caller(1), records...)
-}
-
-func ExternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
-	From(ctx).withChildSpan(msgID).Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanExternalMessageReceived(), msgName, caller(1), records...)
-}
-
-// InstanceContinue is Instance for the receiving side of a cross-service
-// boundary. It mints a fresh root span_id (so the receiver's own spans live
-// under a distinct subtree from the caller's) but *adopts* the upstream
-// trace_id so that every span this Context emits is grouped with the
-// caller's spans into one logical trace. The span:instance:online event is
-// additionally stamped with (parentTraceID, parentSpanID) for observers
-// that materialize a cross-service-edges view (postgres, otel).
+// Link mints a span_id, emits a span:link event referencing it, and returns
+// it so the caller can put it in whatever carrier it has — an HTTP header,
+// a message envelope, a job row. Whoever receives it calls LinkTo with the
+// same id, and a single query on that span_id returns both sides.
 //
-// parentTraceID/parentSpanID are typically the values returned by
-// propagation.Extract. If parentTraceID is uuid.Nil the call collapses to
-// a plain Instance — there is no upstream to attach to.
-func InstanceContinue(ctx context.Context, observer Observer, instanceName, instanceVersion string,
-	parentTraceID, parentSpanID uuid.UUID, records ...Record) (context.Context, Finish) {
-	var at = caller(1)
-	if observer == nil {
-		observer = NilObserver{}
+// The link span is *referenced*, never entered: it is appended to this one
+// event after the chain, flagged SpanFlagLink and nothing else, and the
+// caller's Context is unchanged. Nobody opens or closes it — a span two
+// processes both opened has no meaningful duration.
+func Link(ctx context.Context, linkName string, records ...Record) uuid.UUID {
+	var linkID = uuid.Must(uuid.NewV7())
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
 	}
-	if parentTraceID == uuid.Nil {
-		return instance(ctx, observer, instanceName, instanceVersion, at, records...)
-	}
-	c := Context{
-		// Instance overrides the trace state of any Context already on ctx,
-		// but t is test plumbing, not trace state — carry it through.
-		t:           From(ctx).t,
-		observer:    observer,
-		spanIDs:     []uuid.UUID{uuid.Must(uuid.NewV7())},
-		traceID:     parentTraceID,
-		serviceName: instanceName,
-	}
-	recordVersion := record{key: "version", value: instanceVersion}
-	observer.Observe(Event{
-		SpanIDs:       c.spanIDs,
-		EventID:       uuid.Must(uuid.NewV7()),
-		EventDate:     time.Now(),
-		EventType:     EventTypeSpanInstanceOnline(),
-		EventMessage:  instanceName,
-		EventCaller:   at,
-		Records:       append(records, recordVersion),
-		TraceID:       c.traceID,
-		ParentTraceID: parentTraceID,
-		ParentSpanID:  parentSpanID,
-		ServiceName:   c.serviceName,
-	})
-	return With(ctx, c), func(records ...Record) {
-		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInstanceOffline(), instanceName, at, append(records, recordVersion)...)
-	}
+	c.observe([]uuid.UUID{linkID}, EventTypeSpanLink(), linkName, caller(1), records...)
+	return linkID
 }
 
-// Instance starts a new originating trace. Mints a fresh root span_id and
-// uses it as both the local root and the trace_id. Overrides any existing
-// witness Context already stored on ctx.
+// LinkTo is the other half of Link: it emits a span:link event referencing
+// a span_id that arrived from elsewhere. The Context is unchanged.
+func LinkTo(ctx context.Context, linkID uuid.UUID, linkName string, records ...Record) {
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.observe([]uuid.UUID{linkID}, EventTypeSpanLink(), linkName, caller(1), records...)
+}
+
+// InternalMessageSent is Link with span:internal_message:sent as the event
+// type: it mints the message's span_id, emits the send, and returns the id
+// for the envelope. Pair it with InternalMessageReceived on the recipient.
+func InternalMessageSent(ctx context.Context, msgName string, records ...Record) uuid.UUID {
+	var msgID = uuid.Must(uuid.NewV7())
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.observe([]uuid.UUID{msgID}, EventTypeSpanInternalMessageSent(), msgName, caller(1), records...)
+	return msgID
+}
+
+// InternalMessageReceived is LinkTo with span:internal_message:received as
+// the event type. Emit it inside the span that handles the message, so the
+// handler's span is what a query on msgID finds on this side.
+func InternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.observe([]uuid.UUID{msgID}, EventTypeSpanInternalMessageReceived(), msgName, caller(1), records...)
+}
+
+// ExternalMessageSent is InternalMessageSent across a witness-system
+// boundary (outbound HTTP, third-party RPC, etc).
+func ExternalMessageSent(ctx context.Context, msgName string, records ...Record) uuid.UUID {
+	var msgID = uuid.Must(uuid.NewV7())
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.observe([]uuid.UUID{msgID}, EventTypeSpanExternalMessageSent(), msgName, caller(1), records...)
+	return msgID
+}
+
+// ExternalMessageReceived is InternalMessageReceived across a
+// witness-system boundary.
+func ExternalMessageReceived(ctx context.Context, msgID uuid.UUID, msgName string, records ...Record) {
+	var c = From(ctx)
+	if c.t != nil {
+		c.t.Helper()
+	}
+	c.observe([]uuid.UUID{msgID}, EventTypeSpanExternalMessageReceived(), msgName, caller(1), records...)
+}
+
+// Instance opens the root span of a process: a span representing this
+// service instance's lifetime, announced by a span:instance:online event
+// and closed by the returned Finish. Call it once, at process start.
+//
+// Nothing sits above an instance. ctx is used only as the parent
+// context.Context — for cancellation and unrelated values — and any witness
+// state already on it, test binding included, is discarded rather than
+// inherited. A request arriving from another process does not open an
+// instance: it opens a span under this one, entering the upstream span_id
+// with SpanStart.
 func Instance(ctx context.Context, observer Observer, instanceName string, instanceVersion string, records ...Record) (context.Context, Finish) {
-	return instance(ctx, observer, instanceName, instanceVersion, caller(1), records...)
+	return instance(ctx, nil, observer, instanceName, instanceVersion, caller(1), records...)
 }
 
-// instance is Instance with the call site passed in, so that a delegating
-// caller (InstanceContinue with no upstream trace) still reports its own
-// caller rather than the delegation itself.
-func instance(ctx context.Context, observer Observer, instanceName, instanceVersion, at string, records ...Record) (context.Context, Finish) {
+// Test is Instance for a test: it opens a root span the same way, and
+// additionally binds tb to the Context so every witness entry point can
+// call tb.Helper() and keep a failure pointing at the test's own line
+// rather than at witness internals.
+//
+// The instance is named after the test (tb.Name()) and versioned "test" —
+// a test process has no build version worth recording, and deriving the
+// name means the events of two tests sharing an observer stay tellable
+// apart.
+//
+// Pair it with observers/test, or with any observer whose output you want
+// to assert on:
+//
+//	ctx, finish := witness.Test(context.Background(), t, observer)
+//	defer finish()
+func Test(ctx context.Context, tb testing.TB, observer Observer, records ...Record) (context.Context, Finish) {
+	if tb != nil {
+		tb.Helper()
+	}
+	return instance(ctx, tb, observer, tb.Name(), "test", caller(1), records...)
+}
+
+// instance is Instance with the call site and the owning test passed in,
+// so that a delegating caller — Test — still reports its own caller rather
+// than the delegation itself.
+func instance(ctx context.Context, tb testing.TB, observer Observer, instanceName, instanceVersion, at string, records ...Record) (context.Context, Finish) {
 	if observer == nil {
 		observer = NilObserver{}
 	}
 	rootSpan := uuid.Must(uuid.NewV7())
 	c := Context{
-		t:           From(ctx).t,
-		observer:    observer,
-		spanIDs:     []uuid.UUID{rootSpan},
-		traceID:     rootSpan,
-		serviceName: instanceName,
+		t:        tb,
+		observer: observer,
+		spanIDs:  []uuid.UUID{rootSpan},
 	}
 	recordVersion := record{key: "version", value: instanceVersion}
-	c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInstanceOnline(), instanceName, at, append(records, recordVersion)...)
+	c.Observe(EventTypeSpanInstanceOnline(), instanceName, at, append(records, recordVersion)...)
 	return With(ctx, c), func(records ...Record) {
-		c.Observe(uuid.Must(uuid.NewV7()), time.Now(), EventTypeSpanInstanceOffline(), instanceName, at, append(records, recordVersion)...)
+		c.Observe(EventTypeSpanInstanceOffline(), instanceName, at, append(records, recordVersion)...)
 	}
 }

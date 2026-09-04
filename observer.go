@@ -6,38 +6,27 @@ import (
 )
 
 type Event struct {
-	SpanIDs      []uuid.UUID
+	// SpanIDs is the emitter's span chain, ordered root -> leaf, followed by
+	// any spans this event merely references (links). It is therefore NOT
+	// purely a chain: the last entry is the current span only when the event
+	// carries no link. Select by SpanFlags — SpanFlagOwn, SpanFlagParent —
+	// rather than by position.
+	SpanIDs []uuid.UUID
+
+	// SpanFlags is parallel to SpanIDs: SpanFlags[i] is the role SpanIDs[i]
+	// plays in this event (own / parent / ancestor / instance / link). A nil
+	// or short slice means "roles unknown" — not "no roles" — so consumers
+	// must index-guard rather than assume the lengths match. Every Event
+	// built by a witness Context carries a full slice; hand-built Events
+	// (tests, custom producers) may not.
+	SpanFlags []SpanFlags
+
 	EventID      uuid.UUID
 	EventDate    time.Time
 	EventType    EventType
 	EventMessage string
 	EventCaller  string
 	Records      []Record
-
-	// TraceID is the logical request identifier — the same value across
-	// every span produced while handling one request, even across services.
-	// Set by witness.Instance to the local root span_id, or by
-	// witness.InstanceContinue to the caller's TraceID it received over the
-	// wire. Inherited unchanged by witness.Span. Observers that group spans
-	// (postgres, otlp, stdlog) key on this to reconstruct a trace.
-	TraceID uuid.UUID
-
-	// ParentTraceID / ParentSpanID, when non-nil, pin the event's parent to an
-	// externally-provided trace context — typically extracted from a W3C
-	// traceparent header on an incoming request. Set only on the
-	// span:instance:online event of an InstanceContinue. OTel-aware
-	// observers use these to thread cross-service trace continuity;
-	// others may ignore them.
-	ParentTraceID uuid.UUID
-	ParentSpanID  uuid.UUID
-
-	// ServiceName is the local instance's name — the value passed as
-	// instanceName to Instance / InstanceContinue. Every event emitted by
-	// the same Context carries the same ServiceName; cross-service hops
-	// re-set it on the receiver via InstanceContinue. Empty when an event
-	// was emitted from a Context that never went through an Instance
-	// constructor.
-	ServiceName string
 }
 
 type Observer interface {

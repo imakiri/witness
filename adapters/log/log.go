@@ -7,7 +7,6 @@ import (
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/record"
 	"log"
-	"time"
 )
 
 type Adapter struct {
@@ -46,6 +45,6 @@ func (a *Adapter) Write(p []byte) (n int, err error) {
 	var headerCaller = bytes.TrimSuffix(headerSegments[len(headerSegments)-1], []byte(":"))
 	var body = segments[1]
 	body = bytes.TrimSuffix(body, []byte("\n"))
-	witness.From(a.ctx).Observe(uuid.Must(uuid.NewV7()), time.Now(), a.eventType, string(body), string(headerCaller))
+	witness.From(a.ctx).Observe(a.eventType, string(body), string(headerCaller))
 	return len(p), nil
 }

@@ -43,12 +43,26 @@ func main() {
 	witness.Info(bootCtx, "service-c listening", record.String("addr", addr))
 	finishBoot()
 
+	// One instance per process, not per request: an instance *is* the
+	// process. Requests are spans under it.
+	instanceCtx, finishInstance := witness.Instance(context.Background(), obs, "service-c", "1.0")
+	defer finishInstance()
+
 	srv := &http.Server{
 		Addr: addr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			traceID, parentSpanID, _ := propagation.Extract(r.Header)
-			ctx, finish := witness.InstanceContinue(r.Context(), obs, "service-c", "1.0", traceID, parentSpanID)
+			reqCtx := witness.From(instanceCtx).To(r.Context())
+
+			ctx, finish := witness.Span(reqCtx, "POST /compute")
 			defer finish()
+
+			// The upstream span_id is referenced, not entered: this process
+			// never opens a span another one owns. Both sides emit events
+			// carrying it, so one query on it reconnects them.
+			if upstreamSpanID, ok := propagation.Extract(r.Header); ok {
+				witness.ExternalMessageReceived(ctx, upstreamSpanID, "POST /compute")
+			}
+
 			compute(ctx)
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("computed\n"))

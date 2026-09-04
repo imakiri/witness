@@ -3,7 +3,6 @@ package printers
 import (
 	"encoding/base64"
 	"fmt"
-	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"io"
 	"strings"
@@ -70,16 +69,6 @@ func (p *Pretty) Append(dst []byte, event witness.Event, flags witness.PrintFlag
 	}
 	if flags&witness.PrintEventID != witness.PrintNone {
 		dst = base64.StdEncoding.AppendEncode(dst, event.EventID.Bytes())
-		dst = append(dst, ' ')
-	}
-	{
-		// trace_id is fixed-width (22 chars base64) or 22 spaces when absent —
-		// keeps columns aligned so grep / awk pipelines stay simple.
-		if event.TraceID != uuid.Nil {
-			dst = base64.StdEncoding.AppendEncode(dst, event.TraceID.Bytes())
-		} else {
-			dst = append(dst, strings.Repeat(" ", 22)...)
-		}
 		dst = append(dst, ' ')
 	}
 	if flags&witness.PrintSpanIDs != witness.PrintNone {

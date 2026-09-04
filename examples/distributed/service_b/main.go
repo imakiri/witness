@@ -1,6 +1,7 @@
-// Service B: extracts the W3C traceparent from incoming requests, uses
-// witness.InstanceContinue to graft a child instance under the upstream
-// span, and (sometimes) chains the call onward to service-c.
+// Service B: opens one witness Instance for the process, then enters the
+// span_id each incoming request carries in its W3C traceparent, so its
+// events land in the very span service-a opened. Sometimes chains the call
+// onward to service-c.
 package main
 
 import (
@@ -12,7 +13,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/observers/postgres"
 	"github.com/imakiri/witness/propagation"
@@ -44,13 +44,25 @@ func main() {
 
 	client := &http.Client{Timeout: 5 * time.Second}
 
+	// One instance per process, not per request: an instance *is* the
+	// process. Requests are spans under it.
+	instanceCtx, finishInstance := witness.Instance(context.Background(), obs, "service-b", "1.0")
+	defer finishInstance()
+
 	srv := &http.Server{
 		Addr: addr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			traceID, parentSpanID, _ := propagation.Extract(r.Header)
+			reqCtx := witness.From(instanceCtx).To(r.Context())
 
-			ctx, finish := witness.InstanceContinue(r.Context(), obs, "service-b", "1.0", traceID, parentSpanID)
+			ctx, finish := witness.Span(reqCtx, "POST /work")
 			defer finish()
+
+			// The upstream span_id is referenced, not entered: this process
+			// never opens a span another one owns. Both sides emit events
+			// carrying it, so one query on it reconnects them.
+			if upstreamSpanID, ok := propagation.Extract(r.Header); ok {
+				witness.ExternalMessageReceived(ctx, upstreamSpanID, "POST /work")
+			}
 
 			handle(ctx)
 
@@ -65,9 +77,7 @@ func main() {
 		}),
 	}
 
-	bootCtx, finishBoot := witness.Instance(context.Background(), obs, "service-b-boot", "1.0")
-	witness.Info(bootCtx, "service-b listening", record.String("addr", addr))
-	finishBoot()
+	witness.Info(instanceCtx, "service-b listening", record.String("addr", addr))
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("listen: %v", err)
@@ -91,11 +101,9 @@ func callServiceC(ctx context.Context, client *http.Client, url string) {
 		witness.Error(ctx, "build request service-c", err)
 		return
 	}
-	c := witness.From(ctx)
-	propagation.Inject(req.Header, c.TraceID(), c.CurrentSpanID())
+	msgID := witness.ExternalMessageSent(ctx, "POST service-c /compute (from B)", record.String("url", url))
+	propagation.Inject(req.Header, msgID)
 
-	msgID := uuid.Must(uuid.NewV7())
-	witness.ExternalMessageSent(ctx, msgID, "POST service-c /compute (from B)", record.String("url", url))
 	resp, err := client.Do(req)
 	if err != nil {
 		witness.Error(ctx, "call service-c", err)

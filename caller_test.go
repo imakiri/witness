@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/stretchr/testify/require"
@@ -89,7 +88,7 @@ func TestCallers(t *testing.T) {
 				ErrorOrInfo(ctx, "ok", "err", nil)
 			},
 			"Observe(": func(ctx context.Context) {
-				Observe(ctx, uuid.Must(uuid.NewV7()), time.Now(), EventTypeLogInfo(), "m")
+				Observe(ctx, EventTypeLogInfo(), "m")
 			},
 		}
 		for token, call := range cases {
@@ -136,10 +135,6 @@ func TestCallers(t *testing.T) {
 				_, f := Span(ctx, "s")
 				return f
 			},
-			"Trace(": func(ctx context.Context) Finish {
-				_, f := Trace(ctx, "s")
-				return f
-			},
 			"Service(": func(ctx context.Context) Finish {
 				_, f := Service(ctx, "s")
 				return f
@@ -172,25 +167,6 @@ func TestCallers(t *testing.T) {
 		requireCaller(t, events[1], "Instance(")
 	})
 
-	t.Run("InstanceContinue", func(t *testing.T) {
-		for name, parent := range map[string]uuid.UUID{
-			"with upstream": uuid.Must(uuid.NewV7()),
-			// No upstream delegates to the unexported instance, which must not
-			// swallow the original call site.
-			"no upstream": uuid.Nil,
-		} {
-			t.Run(name, func(t *testing.T) {
-				var obs = &captureObserver{}
-				_, finish := InstanceContinue(context.Background(), obs, "i", "v1", parent, uuid.Nil)
-				finish()
-				var events = obs.all()
-				require.Len(t, events, 2)
-				requireCaller(t, events[0], "InstanceContinue(")
-				requireCaller(t, events[1], "InstanceContinue(")
-			})
-		}
-	})
-
 	t.Run("manual spans and messages", func(t *testing.T) {
 		var id = uuid.Must(uuid.NewV7())
 		var cases = map[string]func(ctx context.Context){
@@ -201,13 +177,19 @@ func TestCallers(t *testing.T) {
 				SpanFinish(ctx, id, "s")
 			},
 			"InternalMessageSent(": func(ctx context.Context) {
-				InternalMessageSent(ctx, id, "m")
+				InternalMessageSent(ctx, "m")
 			},
 			"InternalMessageReceived(": func(ctx context.Context) {
 				InternalMessageReceived(ctx, id, "m")
 			},
 			"ExternalMessageSent(": func(ctx context.Context) {
-				ExternalMessageSent(ctx, id, "m")
+				ExternalMessageSent(ctx, "m")
+			},
+			"Link(": func(ctx context.Context) {
+				Link(ctx, "l")
+			},
+			"LinkTo(": func(ctx context.Context) {
+				LinkTo(ctx, id, "l")
 			},
 			"ExternalMessageReceived(": func(ctx context.Context) {
 				ExternalMessageReceived(ctx, id, "m")

@@ -62,7 +62,7 @@ func TestErrorRouting(t *testing.T) {
 			observer, err := stdlog.NewObserver(printer, options...)
 			require.NoError(t, err)
 
-			var ctx = witness.NewContext(observer).To(context.Background())
+			ctx, _ := witness.Test(context.Background(), t, observer)
 			witness.Error(ctx, "boom", nil)
 
 			require.Contains(t, out.String(), tc.wantOut)

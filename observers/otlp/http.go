@@ -1,6 +1,7 @@
 package otlp
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/imakiri/witness"
@@ -22,26 +23,31 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	spans := witness.From(req.Context()).SpanIDs()
 	if len(spans) > 0 {
 		req = req.Clone(req.Context())
-		Inject(req.Header, spans[0], spans[len(spans)-1])
+		Inject(req.Header, spans[len(spans)-1])
 	}
 	return t.base.RoundTrip(req)
 }
 
-// Middleware opens a witness Instance for each incoming request. If the
-// request carries a W3C traceparent header, the new Instance continues the
-// upstream trace via InstanceContinue; otherwise a fresh root span is created
-// via Instance.
-func Middleware(observer witness.Observer, name, version string) func(http.Handler) http.Handler {
+// Middleware opens one span per incoming request under the process's
+// witness Context, which instanceCtx must carry — call witness.Instance
+// once at startup and pass its context here. An instance is a process, not
+// a request: opening one per request would claim a new process on every
+// call and put SpanFlagInstance on thousands of spans.
+//
+// When the request carries a W3C traceparent, the span_id it names is
+// *referenced* from inside the request span with witness.ExternalMessageReceived
+// — not entered. Both processes then emit events carrying that span_id, so
+// one query on it returns both sides, while each span's start and finish
+// stay with the process that owns it.
+func Middleware(instanceCtx context.Context) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := r.Context()
-			var finish witness.Finish
-			if traceID, parentSpanID, ok := Extract(r.Header); ok {
-				ctx, finish = witness.InstanceContinue(ctx, observer, name, version, traceID, parentSpanID)
-			} else {
-				ctx, finish = witness.Instance(ctx, observer, name, version)
-			}
+			name := r.Method + " " + r.URL.Path
+			ctx, finish := witness.Span(witness.From(instanceCtx).To(r.Context()), name)
 			defer finish()
+			if upstreamSpanID, ok := Extract(r.Header); ok {
+				witness.ExternalMessageReceived(ctx, upstreamSpanID, name)
+			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

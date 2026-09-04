@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/observers/stdlog"
 	"github.com/imakiri/witness/printers"
@@ -34,18 +33,20 @@ func main() {
 
 	var client = new(http.Client)
 
-	var msgID = uuid.Must(uuid.NewV7())
 	request, err := http.NewRequest(http.MethodGet, "https://google.com", nil)
 	if err != nil {
 		log.Fatalln("http.NewRequest failed with error:", err)
 	}
-	request.Header.Set("X-Message", msgID.String())
 
-	witness.ExternalMessageSent(ctx, msgID, "google request")
+	// The send mints the message's span_id and returns it for the carrier.
+	msgID := witness.ExternalMessageSent(ctx, "google request")
+	request.Header.Set("X-Message", msgID.String())
 	response, err := client.Do(request)
 	if err != nil {
 		log.Fatalln("client.Do(request) failed with error:", err)
 	}
+	// Both halves reference the same span_id from this process's own span;
+	// neither enters it.
 	witness.ExternalMessageReceived(ctx, msgID, "google response", record.Int("status_code", response.StatusCode))
 	if response.StatusCode != http.StatusOK {
 		log.Fatalln("client.Do(request) failed with code:", response.StatusCode)

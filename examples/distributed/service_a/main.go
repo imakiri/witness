@@ -12,7 +12,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
 	"github.com/imakiri/witness/observers/postgres"
 	"github.com/imakiri/witness/propagation"
@@ -51,10 +50,11 @@ func main() {
 	srv := &http.Server{
 		Addr: addr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Trace (not Span) so every event of this request shares a
-			// fresh trace_id, including service-b/c spans after the hop.
+			// One span per request. Downstream services rejoin it by the
+			// span_id carried in the traceparent header — there is no
+			// trace_id, the shared span_id is the link.
 			reqCtx := witness.From(ctx).To(r.Context())
-			workCtx, finishWork := witness.Trace(reqCtx, "handle-work")
+			workCtx, finishWork := witness.Span(reqCtx, "handle-work")
 			defer finishWork()
 
 			// Pick a fan-out pattern: 0 = call only B, 1 = call only C,
@@ -87,11 +87,10 @@ func callPeer(ctx context.Context, client *http.Client, url, peer, msgName, body
 		return
 	}
 
-	c := witness.From(ctx)
-	propagation.Inject(req.Header, c.TraceID(), c.CurrentSpanID())
-
-	msgID := uuid.Must(uuid.NewV7())
-	witness.ExternalMessageSent(ctx, msgID, msgName, record.String("url", url))
+	// The send mints the shared span_id and hands it back for the carrier;
+	// the peer references the same id and a query on it returns both sides.
+	msgID := witness.ExternalMessageSent(ctx, msgName, record.String("url", url))
+	propagation.Inject(req.Header, msgID)
 
 	resp, err := client.Do(req)
 	if err != nil {

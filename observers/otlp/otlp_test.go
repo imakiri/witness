@@ -151,27 +151,19 @@ func TestTraceIDStableAcrossSpans(t *testing.T) {
 }
 
 func TestPropagationInjectExtractRoundtrip(t *testing.T) {
-	root := uuid.Must(uuid.NewV7())
 	msg := uuid.Must(uuid.NewV7())
 
 	header := http.Header{}
-	Inject(headerCarrier{header}, root, msg)
+	Inject(headerCarrier{header}, msg)
 
-	tid, sid, ok := Extract(headerCarrier{header})
+	sid, ok := Extract(headerCarrier{header})
 	if !ok {
 		t.Fatalf("Extract failed; header=%q", header.Get(TraceparentHeader))
 	}
-	// trace_id round-trips fully (16 bytes from root)
-	wantTID := traceIDFromUUID(root)
-	gotTID := traceIDFromUUID(tid)
-	if wantTID != gotTID {
-		t.Fatalf("trace_id mismatch: want %x got %x", wantTID, gotTID)
-	}
-	// span_id round-trips for the 8 byte portion
-	wantSID := spanIDFromUUID(msg)
-	gotSID := spanIDFromUUID(sid)
-	if wantSID != gotSID {
-		t.Fatalf("span_id mismatch: want %x got %x", wantSID, gotSID)
+	// The span_id round-trips whole: with no trace_id to carry, the
+	// traceparent's 16-byte trace-id field holds the entire uuid.
+	if sid != msg {
+		t.Fatalf("span_id mismatch: want %s got %s", msg, sid)
 	}
 }
 

@@ -281,10 +281,13 @@ func TestObserverAfterCloseDropsAndCountsEveryEvent(t *testing.T) {
 	}
 }
 
-// TestObserverPropagatesServiceName — events emitted through a witness.Context
-// that went through witness.Instance must land in DB with the right
-// service_name column populated end-to-end. Integration test, env-gated.
-func TestObserverPropagatesServiceName(t *testing.T) {
+// TestObserverPropagatesInstanceSpan — events emitted through a
+// witness.Context that went through witness.Instance must all land in the DB
+// carrying that instance's span_id, flagged as the instance (span_flags & 8).
+// That flagged span is what replaced the service_name column: it identifies
+// the emitting process, and its span:instance:online event carries the name.
+// Integration test, env-gated.
+func TestObserverPropagatesInstanceSpan(t *testing.T) {
 	dsn := os.Getenv("WITNESS_TEST_DSN")
 	if dsn == "" {
 		t.Skip("WITNESS_TEST_DSN not set; skipping integration test")
@@ -333,14 +336,15 @@ func TestObserverPropagatesServiceName(t *testing.T) {
 	obs.Close()
 
 	type row struct {
-		service string
-		count   int
+		instance string
+		count    int
 	}
 	rows, err := admin.Query(ctx, `
-		SELECT COALESCE(service_name, '<null>') AS service, count(*)::int
-		FROM witness.events
-		GROUP BY service
-		ORDER BY service`)
+		SELECT s.span_id::text, count(*)::int
+		FROM witness.spans s
+		WHERE s.span_flags & 8 <> 0
+		GROUP BY s.span_id
+		ORDER BY s.span_id`)
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -349,17 +353,30 @@ func TestObserverPropagatesServiceName(t *testing.T) {
 	var got []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.service, &r.count); err != nil {
+		if err := rows.Scan(&r.instance, &r.count); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
 		got = append(got, r)
 	}
-	if len(got) != 1 || got[0].service != "test-service" {
-		t.Fatalf("expected all events under 'test-service', got %+v", got)
+	if len(got) != 1 {
+		t.Fatalf("expected one instance span, got %+v", got)
 	}
 	// Instance+Span pair = 4 lifecycle events + 1 Info = 5.
 	if got[0].count != 5 {
-		t.Errorf("expected 5 events, got %d", got[0].count)
+		t.Errorf("expected 5 events under the instance span, got %d", got[0].count)
+	}
+
+	// The instance's name lives on its span:instance:online event.
+	var name string
+	if err := admin.QueryRow(ctx, `
+		SELECT e.event_message
+		FROM witness.events e
+		JOIN witness.spans s ON s.event_id = e.event_id
+		WHERE s.span_id = $1::uuid AND e.event_type = 21`, got[0].instance).Scan(&name); err != nil {
+		t.Fatalf("query instance name: %v", err)
+	}
+	if name != "test-service" {
+		t.Errorf("instance name = %q, want %q", name, "test-service")
 	}
 }
 

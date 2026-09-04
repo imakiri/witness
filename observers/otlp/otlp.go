@@ -83,28 +83,62 @@ func (o *Observer) Observe(event witness.Event) {
 		witness.EventTypeLogErrorInternal():
 		o.recordError(event)
 
-	case witness.EventTypeSpanInternalMessageSent(),
-		witness.EventTypeSpanExternalMessageSent():
-		o.messageSent(event)
-
-	case witness.EventTypeSpanInternalMessageReceived(),
+	case witness.EventTypeSpanLink(),
+		witness.EventTypeSpanInternalMessageSent(),
+		witness.EventTypeSpanExternalMessageSent(),
+		witness.EventTypeSpanInternalMessageReceived(),
 		witness.EventTypeSpanExternalMessageReceived():
-		o.messageReceived(event)
+		o.linkEvent(event)
 	}
+}
+
+// byFlag returns the first span_id carrying flag. Event.SpanIDs holds the
+// emitter's chain followed by referenced link spans, so position is not
+// enough: without the flags a link appended at the tail would be mistaken
+// for the current span, registering the otel span under an id its finish
+// event never uses.
+//
+// fallback is the positional answer, used for events with no SpanFlags at
+// all — hand-built ones from tests or third-party producers, which never
+// carry links either.
+func byFlag(event witness.Event, flag witness.SpanFlags, fallback int) (uuid.UUID, bool) {
+	if len(event.SpanFlags) == len(event.SpanIDs) {
+		for i, f := range event.SpanFlags {
+			if f&flag != 0 {
+				return event.SpanIDs[i], true
+			}
+		}
+		return uuid.Nil, false
+	}
+	if fallback < 0 || fallback >= len(event.SpanIDs) {
+		return uuid.Nil, false
+	}
+	return event.SpanIDs[fallback], true
 }
 
 func currentSpanID(event witness.Event) (uuid.UUID, bool) {
-	if len(event.SpanIDs) == 0 {
-		return uuid.Nil, false
-	}
-	return event.SpanIDs[len(event.SpanIDs)-1], true
+	return byFlag(event, witness.SpanFlagOwn, len(event.SpanIDs)-1)
 }
 
 func parentSpanID(event witness.Event) (uuid.UUID, bool) {
-	if len(event.SpanIDs) < 2 {
-		return uuid.Nil, false
+	return byFlag(event, witness.SpanFlagParent, len(event.SpanIDs)-2)
+}
+
+// linkedSpanIDs are the spans this event references without being inside
+// them — the shared point of a hand-off. OTel models that as a span link,
+// not as parentage: the peer's half is the same span seen from the other
+// side, not one above ours.
+func linkedSpanIDs(event witness.Event) []uuid.UUID {
+	if len(event.SpanFlags) != len(event.SpanIDs) {
+		return nil
 	}
-	return event.SpanIDs[len(event.SpanIDs)-2], true
+	var out []uuid.UUID
+	for i, f := range event.SpanFlags {
+		if f&witness.SpanFlagLink != 0 {
+			out = append(out, event.SpanIDs[i])
+		}
+	}
+	return out
 }
 
 func rootSpanID(event witness.Event) (uuid.UUID, bool) {
@@ -126,34 +160,36 @@ func (o *Observer) startSpan(event witness.Event) {
 		attribute.String("witness.event_caller", event.EventCaller),
 		attribute.String("witness.event_type", event.EventType.String()),
 	)
-	_, span := o.tracer.Start(parentCtx, event.EventMessage,
+	opts := []trace.SpanStartOption{
 		trace.WithTimestamp(event.EventDate),
 		trace.WithAttributes(attrs...),
-	)
+	}
+	for _, linkID := range linkedSpanIDs(event) {
+		sc := trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    traceIDFromUUID(linkID),
+			SpanID:     spanIDFromUUID(linkID),
+			TraceFlags: trace.FlagsSampled,
+			Remote:     true,
+		})
+		if sc.IsValid() {
+			opts = append(opts, trace.WithLinks(trace.Link{SpanContext: sc}))
+		}
+	}
+	_, span := o.tracer.Start(parentCtx, event.EventMessage, opts...)
 	o.reg.Set(curID, span)
 }
 
-// parentContext nests the new span under its registered parent if any. For
-// cross-service continuation (ParentTraceID set) it pins parent to the
-// upstream SpanContext. Otherwise it synthesizes a remote SpanContext from
-// the root span_id so every span in the same witness instance shares one
-// trace_id.
+// parentContext nests the new span under its registered parent if any.
+//
+// When the parent is not in the registry the span is grafted onto a
+// synthesized remote SpanContext built from rootID — the first span_id of
+// the chain, always this process's instance root — so every span of one
+// instance shares one OTel trace_id.
 func (o *Observer) parentContext(event witness.Event, rootID uuid.UUID) context.Context {
 	ctx := context.Background()
 	if parent, ok := parentSpanID(event); ok {
 		if parentSpan, found := o.reg.Get(parent); found {
 			return trace.ContextWithSpan(ctx, parentSpan)
-		}
-	}
-	if event.ParentTraceID != uuid.Nil {
-		sc := trace.NewSpanContext(trace.SpanContextConfig{
-			TraceID:    traceIDFromUUID(event.ParentTraceID),
-			SpanID:     spanIDFromUUID(event.ParentSpanID),
-			TraceFlags: trace.FlagsSampled,
-			Remote:     true,
-		})
-		if sc.IsValid() {
-			return trace.ContextWithSpanContext(ctx, sc)
 		}
 	}
 	sc := trace.NewSpanContext(trace.SpanContextConfig{
@@ -224,32 +260,46 @@ func (o *Observer) recordError(event witness.Event) {
 	)
 }
 
-func (o *Observer) messageSent(event witness.Event) {
-	msgID, ok := currentSpanID(event)
+// linkEvent records a reference to a shared span_id — a Link / LinkTo or
+// either half of a message hand-off — on the span the caller was in.
+//
+// Each referenced id becomes an OTel span link, which is the primitive for
+// exactly this: the peer's half of a shared span is not above ours, it is
+// the same span seen from the other side, so it is a link and not a parent.
+// The link arrives after the span started, hence Span.AddLink rather than
+// trace.WithLinks. An event carrying the same ids is added too, so the
+// reference is visible in backends that do not render links.
+func (o *Observer) linkEvent(event witness.Event) {
+	ownID, ok := currentSpanID(event)
 	if !ok {
 		return
 	}
-	carrierID, ok := parentSpanID(event)
-	if !ok {
-		return
-	}
-	span, found := o.reg.Get(carrierID)
+	span, found := o.reg.Get(ownID)
 	if !found {
 		return
 	}
 	attrs := recordsToAttributes(event.Records)
+	for _, linkID := range linkedSpanIDs(event) {
+		attrs = append(attrs, attribute.String("witness.link_span_id", linkID.String()))
+		sc := trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    traceIDFromUUID(linkID),
+			SpanID:     spanIDFromUUID(linkID),
+			TraceFlags: trace.FlagsSampled,
+			Remote:     true,
+		})
+		if sc.IsValid() {
+			span.AddLink(trace.Link{SpanContext: sc, Attributes: []attribute.KeyValue{
+				attribute.String("witness.event_type", event.EventType.String()),
+			}})
+		}
+	}
 	attrs = append(attrs,
-		attribute.String("witness.message_id", msgID.String()),
 		attribute.String("witness.event_type", event.EventType.String()),
 	)
 	span.AddEvent(event.EventMessage,
 		trace.WithTimestamp(event.EventDate),
 		trace.WithAttributes(attrs...),
 	)
-}
-
-func (o *Observer) messageReceived(event witness.Event) {
-	o.messageSent(event)
 }
 
 func recordsToAttributes(records []witness.Record) []attribute.KeyValue {
