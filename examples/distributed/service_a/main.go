@@ -56,19 +56,30 @@ func main() {
 			// span_id carried in the traceparent header — there is no
 			// trace_id, the shared span_id is the link.
 			reqCtx := core.From(ctx).To(r.Context())
-			workCtx, finishWork := witness.Span(reqCtx, "handle-work")
-			defer finishWork()
 
 			// Pick a fan-out pattern: 0 = call only B, 1 = call only C,
 			// 2 = call both in sequence. Combined with service_b's
 			// occasional chain to C this gives four distinct trace shapes
 			// in the service map.
 			mode := rand.Intn(3)
+
+			// Records on the two lifecycle events are what a trace view shows
+			// as the span's attributes — both halves, so what is known on the
+			// way out belongs on the finish.
+			var peers int
+			workCtx, finishWork := witness.Span(reqCtx, "handle-work",
+				record.String("method", r.Method),
+				record.String("path", r.URL.Path),
+				record.Int("mode", mode))
+			defer func() { finishWork(record.Int("peers_called", peers)) }()
+
 			if mode == 0 || mode == 2 {
 				callPeer(workCtx, client, bURL, "service-b", "POST service-b /sub", "hello from A")
+				peers++
 			}
 			if mode == 1 || mode == 2 {
 				callPeer(workCtx, client, cURL, "service-c", "POST service-c /compute", "compute=42")
+				peers++
 			}
 
 			w.WriteHeader(http.StatusOK)

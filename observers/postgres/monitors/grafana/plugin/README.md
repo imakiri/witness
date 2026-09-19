@@ -119,3 +119,28 @@ full waterfall.
 The plugin's `CheckHealth` runs `SELECT 1` and `SELECT 1 FROM
 witness.events LIMIT 1`. If the second fails, the data source page tells
 you to apply the migrations.
+
+## Building
+
+```sh
+GOWORK=off go build -o dist/gpx_witness_linux_amd64 ./pkg   # backend
+cp plugin.json dist/plugin.json
+```
+
+`dist/module.js` is hand-written and committed alongside this README's
+instructions rather than produced by webpack: everything this plugin does
+happens in the backend, so the frontend only has to register a
+`DataSourceWithBackend` and interpolate dashboard variables into the query
+JSON (`DataSourceWithBackend` does not do that on its own). The consequence
+is that **there is no query editor UI** — queries come from provisioned
+dashboards. Building the editor means pulling in the `@grafana/create-plugin`
+toolchain, which is a bigger dependency than the editor is worth today.
+
+Grafana loads it unsigned:
+
+```sh
+-e GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=imakiri-witness-datasource \
+-v "$PWD/dist:/var/lib/grafana/plugins/imakiri-witness-datasource"
+```
+
+`scripts/demo.sh` does all of this.

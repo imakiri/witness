@@ -1,0 +1,225 @@
+{
+  "uid": "witness-trace",
+  "title": "Witness \u2014 trace waterfall",
+  "tags": [
+    "witness"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "root",
+        "type": "textbox",
+        "label": "Root span",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": [],
+        "description": "Root span id of the trace to draw. Click a row in the list above to set it."
+      },
+      {
+        "name": "service",
+        "type": "textbox",
+        "label": "Service",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": [],
+        "description": "Filter the trace list to traces the named service took part in."
+      },
+      {
+        "name": "search",
+        "type": "textbox",
+        "label": "Name contains",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": [],
+        "description": "Substring match on the root span's name."
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "table",
+      "title": "Traces \u2014 click a row to draw it below",
+      "id": 1,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "imakiri-witness-datasource",
+        "uid": "witness-plugin"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "imakiri-witness-datasource",
+            "uid": "witness-plugin"
+          },
+          "queryType": "traces",
+          "traces": {
+            "service": "$service",
+            "search": "$search"
+          },
+          "limit": 200
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "started_at",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "root_span_id"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 300
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Draw this trace",
+                    "url": "/d/witness-trace/witness-trace-waterfall?var-root=${__value.raw}&${__url_time_range}",
+                    "targetBlank": false
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration_ms"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "error_count"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "transparent",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "started_at"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 190
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "traces",
+      "title": "Trace $root",
+      "id": 2,
+      "gridPos": {
+        "h": 22,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "imakiri-witness-datasource",
+        "uid": "witness-plugin"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "imakiri-witness-datasource",
+            "uid": "witness-plugin"
+          },
+          "queryType": "trace",
+          "trace": {
+            "rootSpanID": "$root"
+          }
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    }
+  ]
+}

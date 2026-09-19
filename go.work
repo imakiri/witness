@@ -14,6 +14,7 @@ use (
 	./observers/test
 	./printers
 	./record
+	./testenv
 )
 
 // --- release.sh: intra-repo replaces (regenerated) ---

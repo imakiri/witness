@@ -216,7 +216,7 @@ func (o *Observer) worker() {
 	defer ticker.Stop()
 
 	for {
-		var batch pgx.Batch
+		var events = make([]core.Event, 0, o.config.CollectionMaxSize)
 		var shuttingDown bool
 	collect:
 		for range o.config.CollectionMaxSize {
@@ -227,11 +227,11 @@ func (o *Observer) worker() {
 			case <-ticker.C:
 				break collect
 			case event := <-o.observeCh:
-				queueEvent(&batch, event)
+				events = append(events, event)
 			}
 		}
-		if batch.Len() > 0 {
-			o.flush(&batch)
+		if len(events) > 0 {
+			o.flush(events)
 		}
 		if shuttingDown {
 			o.drain()
@@ -245,73 +245,134 @@ func (o *Observer) worker() {
 // (ShutdownTimeout reached).
 func (o *Observer) drain() {
 	for {
-		var batch pgx.Batch
+		var events = make([]core.Event, 0, o.config.CollectionMaxSize)
 	collect:
 		for range o.config.CollectionMaxSize {
 			select {
 			case <-o.shutdownCtx.Done():
-				if batch.Len() > 0 {
-					o.flush(&batch)
+				if len(events) > 0 {
+					o.flush(events)
 				}
 				return
 			case event := <-o.observeCh:
-				queueEvent(&batch, event)
+				events = append(events, event)
 			default:
 				break collect
 			}
 		}
-		if batch.Len() == 0 {
+		if len(events) == 0 {
 			return
 		}
-		o.flush(&batch)
+		o.flush(events)
 	}
 }
 
-func (o *Observer) flush(batch *pgx.Batch) {
+// flush writes one batch: three multi-row inserts and the cache merge.
+//
+// Multi-row rather than a statement per row — a 1024-event batch is a few
+// thousand rows, and one INSERT ... SELECT unnest(...) per table is one
+// parse and one round trip instead of thousands. It is also what makes the
+// merge affordable: it folds the batch in as a set.
+func (o *Observer) flush(events []core.Event) {
 	ctx, cancel := context.WithTimeout(o.shutdownCtx, o.config.BatchTimeout)
 	defer cancel()
+
+	batch := buildBatch(events)
 	if err := o.connection.SendBatch(ctx, batch).Close(); err != nil {
 		log.Println("witness/postgres: failed to send batch:", err)
 	}
 }
 
-func queueEvent(batch *pgx.Batch, event core.Event) {
-	// Normalize to UTC. The events schema stores event_date as `timestamp
-	// without time zone`; mixing wall-clock zones makes Grafana's UTC-based
-	// $__timeFilter compare apples to oranges and silently filters
-	// everything out.
-	batch.Queue(`INSERT INTO witness.events
-			(event_id, event_date, event_type, event_message, event_caller)
-		VALUES ($1, $2, $3, $4, $5)`,
-		event.EventID, event.EventDate.UTC(), event.EventType.Value(), event.EventMessage, event.EventCaller,
-	).Exec(func(ct pgconn.CommandTag) error {
-		if !ct.Insert() || ct.RowsAffected() != 1 {
-			return fmt.Errorf("failed to insert event to the database: %s", ct)
+// buildBatch turns events into the four statements that persist them.
+//
+// event_date is normalised to UTC. The schema stores it as `timestamp
+// without time zone`; mixing wall-clock zones makes Grafana's UTC-based
+// $__timeFilter compare apples to oranges and silently filters everything
+// out. The same value is written to all three tables, so the denormalised
+// copies on spans and records cannot disagree with the events row.
+func buildBatch(events []core.Event) *pgx.Batch {
+	var (
+		batch = new(pgx.Batch)
+
+		eventIDs = make([]string, 0, len(events))
+		eventAt  = make([]time.Time, 0, len(events))
+		types    = make([]int64, 0, len(events))
+		messages = make([]string, 0, len(events))
+		callers  = make([]string, 0, len(events))
+
+		spanEventIDs = make([]string, 0, len(events))
+		spanAt       = make([]time.Time, 0, len(events))
+		spanIDs      = make([]string, 0, len(events))
+		spanFlags    = make([]int64, 0, len(events))
+
+		recEventIDs = make([]string, 0, len(events))
+		recAt       = make([]time.Time, 0, len(events))
+		recKeys     = make([]string, 0, len(events))
+		recValues   = make([]string, 0, len(events))
+	)
+
+	for _, event := range events {
+		at := event.EventDate.UTC()
+		id := event.EventID.String()
+
+		eventIDs = append(eventIDs, id)
+		eventAt = append(eventAt, at)
+		types = append(types, event.EventType.Value())
+		messages = append(messages, event.EventMessage)
+		callers = append(callers, event.EventCaller)
+
+		for i, spanID := range event.SpanIDs {
+			// SpanFlags is parallel to SpanIDs but may be nil or short on
+			// hand-built events; 0 is the schema's "roles unknown".
+			var flags core.SpanFlags
+			if i < len(event.SpanFlags) {
+				flags = event.SpanFlags[i]
+			}
+			spanEventIDs = append(spanEventIDs, id)
+			spanAt = append(spanAt, at)
+			spanIDs = append(spanIDs, spanID.String())
+			spanFlags = append(spanFlags, int64(flags))
 		}
-		return nil
-	})
-	for i, spanID := range event.SpanIDs {
-		// SpanFlags is parallel to SpanIDs but may be nil or short on
-		// hand-built events; 0 is the schema's "roles unknown".
-		var flags core.SpanFlags
-		if i < len(event.SpanFlags) {
-			flags = event.SpanFlags[i]
+
+		for _, record := range event.Records {
+			recEventIDs = append(recEventIDs, id)
+			recAt = append(recAt, at)
+			recKeys = append(recKeys, string(record.AppendKey(nil)))
+			recValues = append(recValues, string(record.AppendValue(nil)))
 		}
-		batch.Queue("INSERT INTO witness.spans (event_id, span_id, span_flags) VALUES ($1, $2, $3)",
-			event.EventID, spanID, int64(flags)).Exec(func(ct pgconn.CommandTag) error {
-			if !ct.Insert() || ct.RowsAffected() != 1 {
-				return fmt.Errorf("failed to insert span to the database: %s", ct)
+	}
+
+	queue := func(sql string, want int, args ...any) {
+		if want == 0 {
+			return
+		}
+		batch.Queue(sql, args...).Exec(func(ct pgconn.CommandTag) error {
+			if !ct.Insert() || ct.RowsAffected() != int64(want) {
+				return fmt.Errorf("witness/postgres: wrote %s, wanted %d rows", ct, want)
 			}
 			return nil
 		})
 	}
-	for _, record := range event.Records {
-		batch.Queue("INSERT INTO witness.records (event_id, record_key, record_value) VALUES ($1, $2::varchar, $3::varchar)",
-			event.EventID, record.AppendKey(nil), record.AppendValue(nil)).Exec(func(ct pgconn.CommandTag) error {
-			if !ct.Insert() || ct.RowsAffected() != 1 {
-				return fmt.Errorf("failed to insert record to the database: %s", ct)
-			}
-			return nil
-		})
-	}
+
+	queue(`INSERT INTO witness.events (event_id, event_date, event_type, event_message, event_caller)
+		SELECT * FROM unnest($1::uuid[], $2::timestamp[], $3::int8[], $4::varchar[], $5::varchar[])`,
+		len(eventIDs), eventIDs, eventAt, types, messages, callers)
+
+	queue(`INSERT INTO witness.spans (event_id, event_date, span_id, span_flags)
+		SELECT * FROM unnest($1::uuid[], $2::timestamp[], $3::uuid[], $4::int8[])`,
+		len(spanEventIDs), spanEventIDs, spanAt, spanIDs, spanFlags)
+
+	queue(`INSERT INTO witness.records (event_id, event_date, record_key, record_value)
+		SELECT * FROM unnest($1::uuid[], $2::timestamp[], $3::varchar[], $4::varchar[])`,
+		len(recEventIDs), recEventIDs, recAt, recKeys, recValues)
+
+	// Fold the batch into the derived span cache, in the same batch and so in
+	// the same implicit transaction: a query never sees events whose spans
+	// are not summarised yet. Costs about as much as the three inserts and
+	// takes the event trail from seconds to milliseconds — see
+	// witness.merge_span_cache in 000_schema.up.sql.
+	batch.Queue(`SELECT witness.merge_span_cache($1::uuid[])`, eventIDs).Exec(
+		func(pgconn.CommandTag) error { return nil })
+
+	return batch
 }

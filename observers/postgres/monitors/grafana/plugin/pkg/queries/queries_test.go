@@ -2,11 +2,14 @@ package queries
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -56,7 +59,11 @@ INSERT INTO witness.events (event_id, event_date, event_type, event_message, eve
   ('00000000-0000-4000-8000-000000000007', now() - interval  '2 s', -20, 'POST /order',  'a.go:2'),
   ('00000000-0000-4000-8000-000000000008', now() - interval  '1 s', -21, 'service-a',    'a.go:1');
 
-INSERT INTO witness.spans (event_id, span_id, span_flags) VALUES
+-- event_date is denormalised on witness.spans; the seed takes it from the
+-- events row so the two cannot drift apart here either.
+INSERT INTO witness.spans (event_id, event_date, span_id, span_flags)
+SELECT v.event_id::uuid, e.event_date, v.span_id::uuid, v.span_flags
+  FROM (VALUES
   -- service-a: a0 instance, s1 request, s2 nested
   ('00000000-0000-4000-8000-000000000001', '00000000-0000-4000-9000-0000000000aa',  9),
   ('00000000-0000-4000-8000-000000000002', '00000000-0000-4000-9000-0000000000aa', 10),
@@ -86,10 +93,24 @@ INSERT INTO witness.spans (event_id, span_id, span_flags) VALUES
   ('00000000-0000-4000-8000-000000000014', '00000000-0000-4000-9000-000000000053',  1),
   ('00000000-0000-4000-8000-000000000015', '00000000-0000-4000-9000-0000000000bb', 10),
   ('00000000-0000-4000-8000-000000000015', '00000000-0000-4000-9000-000000000053',  1),
-  ('00000000-0000-4000-8000-000000000016', '00000000-0000-4000-9000-0000000000bb',  9);
+  ('00000000-0000-4000-8000-000000000016', '00000000-0000-4000-9000-0000000000bb',  9)
+  ) AS v(event_id, span_id, span_flags)
+  JOIN witness.events e ON e.event_id = v.event_id::uuid;
 
-INSERT INTO witness.records (event_id, record_key, record_value) VALUES
-  ('00000000-0000-4000-8000-000000000014', 'err', 'disk full');
+INSERT INTO witness.records (event_id, event_date, record_key, record_value)
+SELECT v.event_id::uuid, e.event_date, v.record_key, v.record_value
+  FROM (VALUES
+  ('00000000-0000-4000-8000-000000000014', 'err', 'disk full'),
+  -- On the received event, which is where witness.Handle puts the records
+  -- it is given: they are span attributes all the same.
+  ('00000000-0000-4000-8000-000000000013', 'order_id', 'o-1')
+  ) AS v(event_id, record_key, record_value)
+  JOIN witness.events e ON e.event_id = v.event_id::uuid;
+
+-- The writer maintains the derived cache; a seed that writes rows straight
+-- into the tables has to fold them in the same way, or every query reading
+-- witness.span_facts / witness.span_edges sees an empty database.
+SELECT witness.rebuild_span_cache();
 `
 
 // TestQueries runs every query builder against a real database seeded with a
@@ -201,6 +222,62 @@ func TestQueries(t *testing.T) {
 			}
 		})
 	}
+
+	// Span attributes come from three events, not one: the start, the finish
+	// and the span's own message:received. Records passed to witness.Handle
+	// land on the last of those and exist nowhere else, so reading only the
+	// lifecycle events left every Handle-opened span with an empty
+	// attributes panel.
+	t.Run("trace/tags-include-received", func(t *testing.T) {
+		r := RunTrace(ctx, pool, &Trace{RootSpanID: root})
+		if r.Error != nil {
+			t.Fatalf("query failed: %v", r.Error)
+		}
+		tags, ok := spanTags(t, r, "00000000-0000-4000-9000-000000000053")
+		if !ok {
+			t.Fatal("receiving span not in the trace")
+		}
+		if tags["order_id"] != "o-1" {
+			t.Errorf("tags = %v, want order_id from the received event", tags)
+		}
+	})
+}
+
+// frameField looks a field up by name: a frame's column order is Grafana's
+// contract, not this test's.
+func frameField(t *testing.T, f *data.Frame, name string) *data.Field {
+	t.Helper()
+	for _, fl := range f.Fields {
+		if fl.Name == name {
+			return fl
+		}
+	}
+	t.Fatalf("frame %q has no %q field", f.Name, name)
+	return nil
+}
+
+// spanTags digs the tags of one span out of a trace frame.
+func spanTags(t *testing.T, r backend.DataResponse, spanID string) (map[string]string, bool) {
+	t.Helper()
+	for _, f := range r.Frames {
+		ids, tags := frameField(t, f, "spanID"), frameField(t, f, "tags")
+		for i := 0; i < f.Rows(); i++ {
+			if id, _ := ids.At(i).(string); id != spanID {
+				continue
+			}
+			raw, _ := tags.At(i).(json.RawMessage)
+			var kvs []tagKV
+			if err := json.Unmarshal(raw, &kvs); err != nil {
+				t.Fatalf("tags: %v", err)
+			}
+			out := make(map[string]string, len(kvs))
+			for _, kv := range kvs {
+				out[kv.Key] = fmt.Sprint(kv.Value)
+			}
+			return out, true
+		}
+	}
+	return nil, false
 }
 
 // batchSeedSQL is one process fanning n requests into a batch worker:
@@ -255,9 +332,26 @@ INSERT INTO witness.events (event_id, event_date, event_type, event_message, eve
   -- finished, one that only logged, one that only handed a message off.
   ('00000000-0000-4000-8100-00000000000f', now() - interval '4 s', -20,  'leftover',    'q.go:9'),
   ('00000000-0000-4000-8100-000000000010', now() - interval '4 s',  11,  'still here',  'q.go:10'),
-  ('00000000-0000-4000-8100-000000000011', now() - interval '6 s',  24,  'enqueue',     'q.go:11');
+  ('00000000-0000-4000-8100-000000000011', now() - interval '6 s',  24,  'enqueue',     'q.go:11'),
+  -- An event of the instance span itself, after the requests started and
+  -- before the worker did: it separates the two cuts the instance is
+  -- reached with, which is what pins "earliest cut wins".
+  ('00000000-0000-4000-8100-000000000012', now() - interval '7 s',  11,  'instance noise', 'q.go:12'),
+  -- Older than the trail's default window, on the instance span: the cone
+  -- is cut in time, and this is the event that proves the cut happens.
+  ('00000000-0000-4000-8100-000000000013', now() - interval '2 h',   11,  'ancient',        'q.go:13'),
+  -- A long-lived span that handed the batch work two hours ago and is still
+  -- logging now: the edge is older than the window, the span's own events are
+  -- not. Only the bound on the *edge* keeps it out of the cone.
+  ('00000000-0000-4000-8100-000000000014', now() - interval '2 h',   24,  'ancient enqueue', 'q.go:14'),
+  ('00000000-0000-4000-8100-000000000015', now() - interval '2 h',  -24,  'ancient enqueue', 'q.go:14'),
+  ('00000000-0000-4000-8100-000000000016', now() - interval '5 s',   11,  'still alive',     'q.go:15');
 
-INSERT INTO witness.spans (event_id, span_id, span_flags) VALUES
+-- event_date is denormalised on witness.spans; the seed takes it from the
+-- events row so the two cannot drift apart here either.
+INSERT INTO witness.spans (event_id, event_date, span_id, span_flags)
+SELECT v.event_id::uuid, e.event_date, v.span_id::uuid, v.span_flags
+  FROM (VALUES
   ('00000000-0000-4000-8100-000000000001', '00000000-0000-4000-9100-0000000000aa',  9),
   -- request s1 and its hand-off
   ('00000000-0000-4000-8100-000000000002', '00000000-0000-4000-9100-0000000000aa', 10),
@@ -304,8 +398,219 @@ INSERT INTO witness.spans (event_id, span_id, span_flags) VALUES
   ('00000000-0000-4000-8100-000000000011', '00000000-0000-4000-9100-000000000053',  1),
   ('00000000-0000-4000-8100-000000000011', '00000000-0000-4000-9100-0000000000c3', 16),
   -- ... which the same fan-in event took in
-  ('00000000-0000-4000-8100-00000000000a', '00000000-0000-4000-9100-0000000000c3', 16);
+  ('00000000-0000-4000-8100-00000000000a', '00000000-0000-4000-9100-0000000000c3', 16),
+  ('00000000-0000-4000-8100-000000000012', '00000000-0000-4000-9100-0000000000aa',  9),
+  ('00000000-0000-4000-8100-000000000013', '00000000-0000-4000-9100-0000000000aa',  9),
+  -- the ancient sender d0, its hand-off on link c9, and the batch taking it
+  ('00000000-0000-4000-8100-000000000014', '00000000-0000-4000-9100-0000000000aa', 10),
+  ('00000000-0000-4000-8100-000000000014', '00000000-0000-4000-9100-0000000000d0',  1),
+  ('00000000-0000-4000-8100-000000000014', '00000000-0000-4000-9100-0000000000c9', 16),
+  ('00000000-0000-4000-8100-000000000015', '00000000-0000-4000-9100-0000000000aa', 12),
+  ('00000000-0000-4000-8100-000000000015', '00000000-0000-4000-9100-0000000000f0',  2),
+  ('00000000-0000-4000-8100-000000000015', '00000000-0000-4000-9100-0000000000b0',  1),
+  ('00000000-0000-4000-8100-000000000015', '00000000-0000-4000-9100-0000000000c9', 16),
+  ('00000000-0000-4000-8100-000000000016', '00000000-0000-4000-9100-0000000000aa', 10),
+  ('00000000-0000-4000-8100-000000000016', '00000000-0000-4000-9100-0000000000d0',  1)
+  ) AS v(event_id, span_id, span_flags)
+  JOIN witness.events e ON e.event_id = v.event_id::uuid;
+
+-- The writer maintains the derived cache; a seed that writes rows straight
+-- into the tables has to fold them in the same way, or every query reading
+-- witness.span_facts / witness.span_edges sees an empty database.
+SELECT witness.rebuild_span_cache();
 `
+
+// TestEventTrail walks the causal cone backwards from one event, on the
+// fan-in seed: it has a hand-off written out of order, a retried send and
+// three spans with no start event, which are the shapes the cut rules have
+// to survive.
+func TestEventTrail(t *testing.T) {
+	dsn := os.Getenv("WITNESS_TEST_DSN")
+	if dsn == "" {
+		t.Skip("WITNESS_TEST_DSN not set; skipping integration test")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	defer pool.Close()
+
+	if _, err := pool.Exec(ctx, batchSeedSQL); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	const (
+		instance   = "00000000-0000-4000-9100-0000000000aa"
+		worker     = "00000000-0000-4000-9100-0000000000f0"
+		batch      = "00000000-0000-4000-9100-0000000000b0"
+		s1         = "00000000-0000-4000-9100-000000000051"
+		s2         = "00000000-0000-4000-9100-000000000052"
+		s3         = "00000000-0000-4000-9100-000000000053"
+		ancient    = "00000000-0000-4000-9100-0000000000d0"
+		batchStart = "00000000-0000-4000-8100-000000000009"
+		batchFinis = "00000000-0000-4000-8100-00000000000b"
+		fanIn      = "00000000-0000-4000-8100-00000000000a"
+		s1Sent     = "00000000-0000-4000-8100-000000000003"
+	)
+
+	// From the batch's finish: its own span, the worker above it, the
+	// instance above that, and every request that handed it work. The
+	// worker's *other* children — a finish-only span and an events-only one
+	// — are siblings, not causes, and must not appear: the walk only ever
+	// goes up and back.
+	t.Run("fan-in", func(t *testing.T) {
+		trail := RunEventTrail(ctx, pool, &EventTrail{EventID: batchFinis}, 500)
+		spans, byspan := trailSpans(t, trail)
+		want := map[string]bool{instance: true, worker: true, batch: true, s1: true, s2: true, s3: true}
+		if !sameSet(spans, want) {
+			t.Errorf("spans = %v, want %v", spans, want)
+		}
+		// s1 handed off last (its `sent` is written after the batch already
+		// recorded the receive), so its cut is that send: start, finish and
+		// the send itself.
+		if got := byspan[s1]; got != 3 {
+			t.Errorf("events of s1 = %d, want 3", got)
+		}
+		// s2 retried on one msgID. The cut is the *first* attempt, the same
+		// event link_edges dates the hand-off from, so the retry and the
+		// finish after it are outside the cone.
+		if got := byspan[s2]; got != 2 {
+			t.Errorf("events of s2 = %d, want the start and the first send", got)
+		}
+		// The instance is reached twice: up from the worker (cut: the
+		// worker's start) and up from a request that fed the batch (cut:
+		// that request's start, which is earlier). The earliest cut wins, so
+		// the instance's own event in between is not a cause of ours — only
+		// the online event is.
+		if got := byspan[instance]; got != 1 {
+			t.Errorf("events of the instance = %d, want only its online event", got)
+		}
+		// A span is named by its lifecycle events and nothing else. Reading
+		// the whole 20..29 range instead would name a request span after the
+		// message it handed off, span:message:sent being 24.
+		if got := trailName(t, trail, s1); got != "POST /order" {
+			t.Errorf("span name = %q, want the name of the span, not of its hand-off", got)
+		}
+		// The edge each span was reached by, which is what a view draws the
+		// hand-off with. For a link: the giving event and the receiving one.
+		// For a parent: the child's start event and no event on the parent's
+		// side, because opening a child emits nothing there.
+		if row := trailRow(t, trail, s1); row["viaSpanID"] != batch ||
+			row["edgeFromEventID"] != s1Sent || row["edgeToEventID"] != fanIn {
+			t.Errorf("link edge of s1 = %v", row)
+		}
+		if row := trailRow(t, trail, worker); row["viaSpanID"] != batch ||
+			row["edgeFromEventID"] != "" || row["edgeToEventID"] != batchStart {
+			t.Errorf("parent edge of the worker = %v", row)
+		}
+	})
+
+	// The window is a cut, not a hint: an event older than it is not
+	// reported even though it is a cause. Widen the window and it comes
+	// back. Without the bound the walk reads the whole database, which is
+	// what witness.spans.event_date was denormalised to avoid.
+	t.Run("window", func(t *testing.T) {
+		spans, byspan := trailSpans(t, RunEventTrail(ctx, pool, &EventTrail{EventID: batchFinis}, 500))
+		if got := byspan[instance]; got != 1 {
+			t.Errorf("events of the instance = %d, want the ancient one cut away", got)
+		}
+		if spans[ancient] {
+			t.Error("an edge older than the window was followed; the span on its far end is still alive, which is exactly why the bound is on the edge and not only on the events")
+		}
+		wide := RunEventTrail(ctx, pool, &EventTrail{EventID: batchFinis, SinceMinutes: 180}, 500)
+		wideSpans, _ := trailSpans(t, wide)
+		if !wideSpans[ancient] {
+			t.Error("the ancient sender is missing from a 3h window, where its hand-off is inside")
+		}
+		// Widening the window does not just add rows, it moves the cut: the
+		// instance is now also reached through a span that started two hours
+		// ago, and the earliest cut wins, so what the instance contributes is
+		// its ancient event rather than the online one.
+		if got := trailRow(t, wide, instance)["message"]; got != "ancient" {
+			t.Errorf("the instance contributes %q in a 3h window, want the event before the earliest cut", got)
+		}
+	})
+
+	// From the batch's *start*, one event earlier: the fan-in receive has
+	// not happened yet at that cut, so no request is a cause of it. This is
+	// the guard on the link hop — without it every message a span ever took
+	// would be dragged in, whenever it arrived.
+	t.Run("before-the-receive", func(t *testing.T) {
+		spans, _ := trailSpans(t, RunEventTrail(ctx, pool, &EventTrail{EventID: batchStart}, 500))
+		want := map[string]bool{instance: true, worker: true, batch: true}
+		if !sameSet(spans, want) {
+			t.Errorf("spans = %v, want only the chain above the batch", spans)
+		}
+	})
+}
+
+// trailSpans reduces a trail frame to the set of spans it covers and the
+// number of events it returned for each.
+func trailSpans(t *testing.T, r backend.DataResponse) (map[string]bool, map[string]int) {
+	t.Helper()
+	if r.Error != nil {
+		t.Fatalf("query failed: %v", r.Error)
+	}
+	spans, counts := map[string]bool{}, map[string]int{}
+	for _, f := range r.Frames {
+		ids := frameField(t, f, "spanID")
+		for i := 0; i < f.Rows(); i++ {
+			id, _ := ids.At(i).(string)
+			spans[id] = true
+			counts[id]++
+		}
+	}
+	return spans, counts
+}
+
+// trailRow returns the string fields of the first trail row for one span.
+func trailRow(t *testing.T, r backend.DataResponse, spanID string) map[string]string {
+	t.Helper()
+	for _, f := range r.Frames {
+		ids := frameField(t, f, "spanID")
+		for i := 0; i < f.Rows(); i++ {
+			if id, _ := ids.At(i).(string); id != spanID {
+				continue
+			}
+			out := map[string]string{}
+			for _, fl := range f.Fields {
+				if v, ok := fl.At(i).(string); ok {
+					out[fl.Name] = v
+				}
+			}
+			return out
+		}
+	}
+	return nil
+}
+
+// trailName returns the span name the trail reports for one span.
+func trailName(t *testing.T, r backend.DataResponse, spanID string) string {
+	t.Helper()
+	for _, f := range r.Frames {
+		ids, names := frameField(t, f, "spanID"), frameField(t, f, "spanName")
+		for i := 0; i < f.Rows(); i++ {
+			if id, _ := ids.At(i).(string); id == spanID {
+				n, _ := names.At(i).(string)
+				return n
+			}
+		}
+	}
+	return ""
+}
+
+func sameSet(got, want map[string]bool) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for k := range want {
+		if !got[k] {
+			return false
+		}
+	}
+	return true
+}
 
 // TestBatchFanIn checks the in-process queue shape end to end in SQL: the
 // fan-in event produces one link edge per request, and each request's trace
@@ -338,8 +643,11 @@ func TestBatchFanIn(t *testing.T) {
 		`SELECT count(*) FROM witness.link_edges WHERE to_span_id = $1`, b).Scan(&edges); err != nil {
 		t.Fatalf("link_edges: %v", err)
 	}
-	if edges != 3 {
-		t.Errorf("link edges into the batch span = %d, want one per request", edges)
+	// Three requests, plus the long-lived span that handed the batch work two
+	// hours ago — an edge is an edge however old it is; it is the *walk* that
+	// bounds itself in time, not the view.
+	if edges != 4 {
+		t.Errorf("link edges into the batch span = %d, want one per sender", edges)
 	}
 	// Request 2 sent twice on one msgID; the retry must not double its edge,
 	// and the edge must date from the first attempt, not the last.

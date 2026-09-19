@@ -29,7 +29,7 @@ deps() {  # intra-repo requires of module dir $1, excluding itself
 declare -A DIROF MODDIRS
 for d in $MODS; do
   [ -f "$d/go.mod" ] || continue
-  case "$d" in examples|examples/*) continue;; esac                      # examples are never released
+  case "$d" in examples|examples/*|testenv) continue;; esac             # examples and the demo stack are never released
   grep -q '^module github.com/imakiri/witness' "$d/go.mod" || continue
   MODDIRS[$d]=$(sed -n 's/^module //p' "$d/go.mod")
   DIROF[${MODDIRS[$d]}]=$PWD/$d

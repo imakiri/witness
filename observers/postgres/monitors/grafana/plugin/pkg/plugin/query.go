@@ -12,13 +12,14 @@ import (
 
 // QueryModel is the JSON sent by the frontend QueryEditor for every refId.
 type QueryModel struct {
-	QueryType  string              `json:"queryType"` // search | trace | logs | table | traces | service-map
+	QueryType  string              `json:"queryType"` // search | trace | logs | table | traces | service-map | event-trail
 	Search     *queries.Search     `json:"search,omitempty"`
 	Trace      *queries.Trace      `json:"trace,omitempty"`
 	Logs       *queries.LogsReq    `json:"logs,omitempty"`
 	Table      *queries.TableReq   `json:"table,omitempty"`
 	Traces     *queries.TracesReq  `json:"traces,omitempty"`
 	ServiceMap *queries.ServiceMap `json:"serviceMap,omitempty"`
+	EventTrail *queries.EventTrail `json:"eventTrail,omitempty"`
 	Limit      int                 `json:"limit,omitempty"`
 }
 
@@ -50,6 +51,8 @@ func (d *Datasource) runOne(ctx context.Context, q backend.DataQuery) backend.Da
 		return queries.RunTable(ctx, d.pool, model.Table, q.TimeRange, model.Limit)
 	case "traces":
 		return queries.RunTraces(ctx, d.pool, model.Traces, q.TimeRange, model.Limit)
+	case "event-trail":
+		return queries.RunEventTrail(ctx, d.pool, model.EventTrail, model.Limit)
 	case "service-map":
 		return queries.RunServiceMap(ctx, d.pool, model.ServiceMap)
 	case "search", "":

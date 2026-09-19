@@ -282,6 +282,130 @@ func TestObserverAfterCloseDropsAndCountsEveryEvent(t *testing.T) {
 	}
 }
 
+// TestObserverFillsSpanCache — the writer maintains the derived cache, so a
+// reader never has to re-derive what a span is. The observer folds each batch
+// into witness.span_facts / witness.span_edges through
+// witness.merge_span_cache, in the same batch as the inserts, which is what
+// makes the event trail a walk over ~100 edges instead of a rebuild of the
+// whole edge set (3145 ms -> 2.5 ms on half a million events).
+// Integration test, env-gated.
+func TestObserverFillsSpanCache(t *testing.T) {
+	dsn := os.Getenv("WITNESS_TEST_DSN")
+	if dsn == "" {
+		t.Skip("WITNESS_TEST_DSN not set; skipping integration test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	defer admin.Close()
+
+	if _, err := admin.Exec(ctx, "DROP SCHEMA IF EXISTS witness CASCADE"); err != nil {
+		t.Fatalf("drop schema: %v", err)
+	}
+	if _, err := admin.Exec(ctx, schemaSQL); err != nil {
+		t.Fatalf("apply schema: %v", err)
+	}
+
+	poolCfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatalf("ParseConfig: %v", err)
+	}
+	poolCfg.MaxConns = 2
+
+	obs, err := NewObserver(Config{
+		CollectionDuration: time.Hour,
+		CollectionMaxSize:  64,
+		BatchTimeout:       5 * time.Second,
+		ShutdownTimeout:    5 * time.Second,
+		Database:           poolCfg,
+	})
+	if err != nil {
+		t.Fatalf("NewObserver: %v", err)
+	}
+
+	rootCtx, finishInstance := witness.Instance(context.Background(), obs, "cache-service", "v1")
+	workCtx, finishWork := witness.Span(rootCtx, "do-work")
+	witness.Info(workCtx, "working")
+	msgID := uuid.Must(uuid.NewV7())
+	witness.Sent(workCtx, msgID, "hand off")
+	peerCtx, finishPeer := witness.Handle(rootCtx, msgID, "take over")
+	witness.Info(peerCtx, "took it")
+	finishPeer()
+	finishWork()
+	finishInstance()
+	obs.Close()
+
+	// The work span: named from its start event, counted, placed in its
+	// process, with a parent edge to the instance.
+	var (
+		name     string
+		count    int
+		instance string
+		started  *time.Time
+		finished *time.Time
+	)
+	err = admin.QueryRow(ctx, `
+		SELECT f.span_name, f.event_count::int, f.instance_span_id::text, f.started_at, f.finished_at
+		  FROM witness.span_facts f WHERE f.span_name = 'do-work'`).
+		Scan(&name, &count, &instance, &started, &finished)
+	if err != nil {
+		t.Fatalf("span_facts has no row for the work span: %v", err)
+	}
+	// start, the log line, the hand-off it gave away, finish. A `sent` is an
+	// event of the span that sends it, which is why it counts here.
+	if count != 4 {
+		t.Errorf("event_count = %d, want start, log, sent and finish", count)
+	}
+	if started == nil || finished == nil {
+		t.Errorf("started_at/finished_at = %v/%v, want both", started, finished)
+	}
+
+	var instanceName string
+	if err := admin.QueryRow(ctx,
+		`SELECT span_name FROM witness.span_facts WHERE span_id = $1`, instance).Scan(&instanceName); err != nil {
+		t.Fatalf("the instance span has no facts row: %v", err)
+	}
+	// An instance is a span, and its span:instance:online event names it, so
+	// the service name needs no column of its own.
+	if instanceName != "cache-service" {
+		t.Errorf("instance name = %q, want the service name", instanceName)
+	}
+
+	// The hand-off: one edge, written when the second half arrived, pointing
+	// backwards from the taker to the giver.
+	var edges int
+	if err := admin.QueryRow(ctx, `
+		SELECT count(*)::int FROM witness.span_edges e
+		  JOIN witness.span_facts f ON f.span_id = e.to_span_id
+		 WHERE e.relation = 'link' AND f.span_name = 'take over'`).Scan(&edges); err != nil {
+		t.Fatalf("query link edge: %v", err)
+	}
+	if edges != 1 {
+		t.Errorf("link edges into the handling span = %d, want 1", edges)
+	}
+
+	// Rebuilding from the events must reproduce exactly the same cache: it
+	// holds nothing witness.events does not.
+	var before, after int
+	if err := admin.QueryRow(ctx, `SELECT count(*)::int FROM witness.span_facts`).Scan(&before); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if _, err := admin.Exec(ctx, `SELECT witness.rebuild_span_cache()`); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if err := admin.QueryRow(ctx, `SELECT count(*)::int FROM witness.span_facts`).Scan(&after); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if before != after || after == 0 {
+		t.Errorf("span_facts = %d rows, %d after a rebuild", before, after)
+	}
+}
+
 // TestObserverPropagatesInstanceSpan — events emitted through a
 // core.Context that went through witness.Instance must all land in the DB
 // carrying that instance's span_id, flagged as the instance (span_flags & 8).

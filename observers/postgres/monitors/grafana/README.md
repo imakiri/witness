@@ -38,6 +38,7 @@ docker run -d --name witness-grafana \
   -p 3000:3000 \
   -e GF_AUTH_ANONYMOUS_ENABLED=true \
   -e GF_AUTH_ANONYMOUS_ORG_ROLE=Admin \
+  -e WITNESS_PG_URL=host.docker.internal:5432 \
   --add-host=host.docker.internal:host-gateway \
   -v "$(pwd)/provisioning:/etc/grafana/provisioning" \
   -v "$(pwd)/dashboards:/var/lib/grafana/dashboards" \
@@ -46,40 +47,72 @@ docker run -d --name witness-grafana \
 # 3. Open http://localhost:3000 → Dashboards → Witness → Witness — overview, logs & traces
 ```
 
-The provisioning files assume Postgres at `host.docker.internal:5432`. Edit
-`provisioning/datasources/witness.yaml` for other addresses.
+The datasource URL comes from `WITNESS_PG_URL` — Grafana expands environment
+variables in provisioning files — so point it wherever your database is.
 
 ## How the dashboard reads witness data
 
-Everything keys on `witness.events.trace_id` — the per-request identifier
-that `witness.Trace(ctx, "handle-work")` mints on the entry side and that
-`witness.InstanceContinue(..., parentTraceID, ...)` adopts on the receiver
-side. With this column populated, every panel scopes to a single request
-by setting the dashboard's `request_filter` toggle to `on` and selecting a
-`trace_id` from the dropdown. Before the `trace_id` column existed, request membership
-had to be reconstructed at query time by walking `witness.spans` and
-`witness.cross_service_edges`; the dashboard uses neither once `trace_id`
-is present.
+There is no `trace_id`. A trace is a connected component of the event <-> span
+graph, walked at query time from a **root span**: an entry-point span whose
+parent is an instance and which took no inbound message. `witness.trace_roots`
+lists them; the dashboard's `selected_trace` variable holds one, and every
+downstream panel walks out from it with the recursive CTE in each panel's SQL
+(mirrored in `plugin/pkg/queries/walk.go`).
 
-For request-level visualisations (trace graph, flat span list) the
-dashboard reads:
+The walk is directed — parent -> child via `witness.span_children`, giver ->
+taker via `witness.link_edges` — because plain co-occurrence in
+`witness.spans` would merge a whole process into one component: every event of
+a process carries that process's instance span.
 
-* `witness.span_pairs` — opens & closes joined by span_id, with `duration`.
-* `witness.span_children` — parent ↔ child derived from co-occurring spans.
-* `witness.cross_service_edges` — `parent_trace_id → child_root_span_id`
-  links produced by every `InstanceContinue` call.
+Views the panels read:
 
-For global panels (volume histogram, recent requests, stats) the dashboard
-reads `witness.events` directly.
+* `witness.trace_roots` — one row per request, on the originating side.
+* `witness.span_pairs` — start and finish joined by span_id, with `duration`.
+  Both halves are optional: a span may have started and not finished, or have
+  been observed only by its finish, or carry events and no lifecycle at all.
+* `witness.span_children` — parent stated by `span_flags & 2` on any event of
+  the child, not guessed from timestamps.
+* `witness.link_edges` — hand-offs, in-process ones included: one row per pair
+  of spans sharing a link id, dated from the first send.
+* `witness.instances` / `witness.event_instances` — which process emitted what.
+  A service *is* its instance span; there is no `service_name` column.
+* `witness.event_type_names` — a view over `witness.event_types`, the table the
+  Postgres observer upserts from `core.Events()` at start-up. Custom types
+  registered with `MustNewEventType` appear there automatically.
+
+## Dashboards
+
+* **Witness — traces, services, logs** (`dashboards/witness-overview.json`) —
+  raw SQL against the stock Postgres datasource: trace list, service graph,
+  span table, logs. Needs no plugin.
+* **Witness — trace waterfall** (`dashboards/witness-trace.json`) — the
+  Jaeger-style waterfall, which *does* need the plugin: only a backend
+  datasource can return a frame typed as a trace, and that is what the
+  waterfall renders. Pick a trace in the table at the top; the row link sets
+  the `root` variable and the panel below draws it. Filters: `service` (a
+  service that took part) and `search` (substring of the root span's name).
+
+## Demo
+
+`scripts/demo.sh up` from the repo root brings up Postgres, this Grafana with
+both dashboards and both datasources provisioned, the plugin built and
+mounted, and the three services in `examples/distributed` writing real events
+into it, then drives some traffic. `scripts/demo.sh down` removes it all.
+
+Do not point `WITNESS_TEST_DSN` at the demo database: the plugin's query
+tests `TRUNCATE` the event tables, which leaves the running services without
+their `span:instance:online` rows — every later event then has no service
+name and no trace root.
 
 ## Customising panels for your team
 
 * Each panel's SQL is in the JSON under `targets[*].rawSql`. Keep these as
   reviewable SQL (no string-glue), and use `${trace_id}` / `${message}` etc.
   for the variables defined in `templating.list[*].name`.
-* When adding a new event type via `witness.MustNewEventType`, also add a
-  row to `witness.event_type_names` in `views.up.sql` so the dashboard's
-  filter dropdown surfaces it.
+* A new event type registered with `core.MustNewEventType` needs no SQL: the
+  observer upserts it into `witness.event_types` at start-up, and the name and
+  error flag follow. Register custom types in `init()`, before the observer is
+  built.
 * The PostgreSQL datasource ignores `format: "trace"` and `"logs"` — use
   `"table"` and let the Logs panel auto-detect the `time`/`body` columns.
 

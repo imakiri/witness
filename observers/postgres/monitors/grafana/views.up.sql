@@ -147,20 +147,28 @@ LEFT JOIN witness.span_finishes sf USING (span_id);
 -- Read off *every* event, not off the child's start event: a span need not
 -- have one, and every event it emits carries the same chain, so any one of
 -- them states the parent. DISTINCT collapses the repetition.
+--
+-- child_at is the earliest event of the child that states this parenthood.
+-- Unlike child_started_at it is never NULL — every event carries the chain,
+-- and a span need not have a start — so it is the column a walk bounds
+-- itself in time with. It reads witness.spans.event_date directly: joining
+-- events for the date would defeat the point.
 CREATE OR REPLACE VIEW witness.span_children AS
-SELECT DISTINCT
+SELECT
     p.span_id        AS parent_span_id,
     ps.span_name     AS parent_name,
     c.span_id        AS child_span_id,
     cs.span_name     AS child_name,
     cs.started_at    AS child_started_at,
-    ci.service_name
+    ci.service_name,
+    min(c.event_date) AS child_at
 FROM witness.spans c
 JOIN witness.spans p ON p.event_id = c.event_id AND p.span_flags & 2 <> 0
 LEFT JOIN witness.span_starts    ps ON ps.span_id = p.span_id
 LEFT JOIN witness.span_starts    cs ON cs.span_id = c.span_id
 LEFT JOIN witness.span_instances ci ON ci.span_id = c.span_id
-WHERE c.span_flags & 1 <> 0;
+WHERE c.span_flags & 1 <> 0
+GROUP BY 1, 2, 3, 4, 5, 6;
 
 -- Links: an event referencing a span it is not inside. Both halves of a
 -- hand-off produce one of these against the same link_span_id, which is what

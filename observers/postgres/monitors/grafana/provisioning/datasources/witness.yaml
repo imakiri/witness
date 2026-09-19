@@ -10,12 +10,31 @@ datasources:
     # When Grafana runs in Docker on a host that also runs Postgres, the
     # database is reachable via `host.docker.internal`. Override the URL via
     # GF_DATASOURCES_DEFAULT_URL or edit this file for other topologies.
-    url: host.docker.internal:5432
+    # Grafana expands env vars in provisioning files. Set WITNESS_PG_URL to
+    # host:port of the witness database — scripts/demo.sh does it for you.
+    url: ${WITNESS_PG_URL}
     user: witness
     database: witness
     isDefault: true
     jsonData:
       sslmode: disable
       postgresVersion: 1600
+    secureJsonData:
+      password: witness
+
+  # The witness backend plugin: same database, but the queries are built in
+  # Go (pkg/queries) and returned as Grafana frames — which is what makes a
+  # trace render as a waterfall. The stock Postgres datasource cannot: it
+  # returns tables, and the trace view needs a frame typed as a trace.
+  #
+  # Needs the plugin present in Grafana's plugin directory and, unsigned,
+  # GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=imakiri-witness-datasource.
+  - name: Witness
+    type: imakiri-witness-datasource
+    uid: witness-plugin
+    access: proxy
+    jsonData:
+      url: postgres://witness@${WITNESS_PG_URL}/witness?sslmode=disable
+      maxConns: 4
     secureJsonData:
       password: witness

@@ -28,7 +28,7 @@ go test -run TestCaller ./...
 directly: `cd examples && go run simple.go`.
 
 Sub-modules currently in the workspace: `.` (root, which also
-holds `propagation/`), `adapters/log`, `observers/{multi,otlp,postgres,prometheus,stdlog,tee,test}`, `printers`, `record`, `examples`, `examples/distributed`.
+holds `propagation/`), `adapters/log`, `observers/{multi,otlp,postgres,prometheus,stdlog,tee,test}`, `printers`, `record`, `examples`, `examples/distributed`, `testenv`.
 When adding a new sub-module, register it in `go.work` *and* in `scripts/tidy.sh`'s module list, or the workspace
 and `scripts/release.sh` will both miss it.
 
@@ -245,7 +245,19 @@ Each observer is its own Go module so users only pull in the dependencies they a
   into a `pgx.Batch` until either `CollectionMaxSize` events or `CollectionDuration` elapses, then ship the
   batch. `Observe` never blocks — a full channel drops the event and bumps `Dropped()`; `Close` is idempotent and drains
   under `ShutdownTimeout`. Three tables: `witness.events`, `witness.spans` (event_id ↔ span_id ↔
-  span_flags), `witness.records`. **One migration: `000_schema.up.sql` / `000_schema.down.sql`**,
+  span_flags), `witness.records`, plus a **derived span cache** the writer maintains: `witness.span_facts` (one row
+  per span: name, start, finish, instance, first/last event, event count) and `witness.span_edges` (one row per
+  *backwards* edge — `parent`, or `link` for a hand-off — carrying the cut it imposes and the receiving event that
+  gates it). `flush` writes a batch as **three multi-row `INSERT ... SELECT unnest(...)` statements plus
+  `SELECT witness.merge_span_cache($ids)`**, all in one `pgx.Batch`, so a reader never sees events whose spans are not
+  summarised yet. The merge costs about as much as the inserts (24 ms against 26.5 ms per 1024-event batch, ~24 µs per
+  event) and takes the event trail from **3145 ms to 2.5 ms** on half a million events, returning the same rows. The
+  cache is ~15% of the base tables and is **not truth**: `witness.rebuild_span_cache()` recreates it from the events in
+  ~5 s per 500k events, and nothing but `merge_span_cache` may write to it. **Every merge in it is commutative**
+  (`least`/`greatest`/`coalesce`), which is what makes it correct under unordered, optional events — a start after its
+  finish, a finish that never comes, a `sent` written after the matching `received` all fold to the same row. The one
+  exception is `event_count`, which sums: replaying a batch would double it, so a writer that retries must rebuild
+  instead. See `docs/storage.md` for the measurements and the alternatives that were rejected. **One migration: `000_schema.up.sql` / `000_schema.down.sql`**,
   named `NNN_description.{up,down}.sql`. The old `migration.up.sql` + `migration_v2..v6` chain was collapsed into it —
   pre-1.0, and v0.31 dropped four columns every earlier version wrote. The in-place upgrade `ALTER` block lives in that
   file's header comment. A schema change means a new numbered pair *and* the Grafana views together; `postgres_test.go`
@@ -311,6 +323,34 @@ at start-up — names and the error flag live in Go and are copied in, so custom
 `errorEventTypes`/`logEventTypes` are subqueries over that table for the same reason. A type registered *after* the
 observer is built is not in the table — register custom types in `init()`.
 
+`queryType: event-trail` (`plugin/pkg/queries/trail.go`) answers the other question the model makes cheap: given one
+event, what led to it. It **walks `witness.span_edges`** — the writer's cache — rather than deriving the edge set at
+query time; the walk touches about a hundred edges, and rebuilding the set to find them was the entire cost. The walk goes *backwards* over pairs of (span, cut), where the cut is `(event_date, event_id)` —
+the id breaks the tie, because `event_date` is microseconds while `time.Now()` is nanoseconds. Two edges, both read off
+structure: **parent** (a span's causes are its parent's events up to the child's start event; a child with no start
+keeps the child's own cut rather than inventing a beginning) and **link** (a span that took a hand-off was caused by
+the giving side up to the *first* giving event, the same one `link_edges` dates the hand-off from, so a retry does not
+move the cut). Timestamps enter in exactly one place — an inbound hand-off counts only if its receiving event is at or
+before the current cut — and both sides of that comparison are events of the same span, so no clock is ever compared
+across processes. Where a span is reached by two paths the **earliest** cut wins: the cone is what provably preceded
+the event. `SinceMinutes` (default 60) bounds it from the seed event's own date backwards, and the bound applies to
+**hand-off edges, not to parenthood**: a hand-off older than the window did not cause the event we are asking about,
+while belonging to a parent is not an event and does not age — the parent's own events are cut by the window anyway.
+Widening the window can therefore *move* the cut rather than only adding rows, when it opens a path through an older
+span. `TestEventTrail` pins both rules on `batchSeedSQL`, and both were checked by mutation (drop the guard, or
+take the latest cut, and it fails). Each row also carries the **edge its span was reached by** — `viaSpanID`,
+`edgeFromEventID`, `edgeToEventID` — because a view drawing a hand-off as a line between two lanes needs the span on
+the other end and the two events the line runs between; for a parent edge there is no event on the parent's side
+(opening a child emits nothing there), so `edgeFromEventID` is empty and `edgeToEventID` is the child's start.
+`instanceSpanID` is there for the same reason: lanes are laid out per process, and two instances of one service share
+a name. **The cone goes strictly backwards** — what led to the event, never what followed it. The query deliberately avoids `span_pairs`, `event_instances`,
+`event_records_json` and `span_children`: each is built over the whole database before a row can be read out of it,
+and the trail knows the handful of spans and events it wants — names, service and records come from lateral lookups
+by id, and the parent relation from a two-column `DISTINCT` over `witness.spans`. That plus `back_edges AS
+MATERIALIZED` (a plain CTE is re-planned into the recursive term and re-evaluated on every iteration) took a trail
+from 6.2s to ~3.3s, the second measured on 14x more data. It still scales with table size rather than cone size —
+`span_starts` and the edge set are global — which is the next thing to attack if it matters.
+
 The plugin lives outside the workspace: `GOWORK=off go build ./...`. Its queries are SQL strings, so nothing but
 running them catches a renamed view — `pkg/queries/queries_test.go` is that check. It seeds a two-service trace in pure
 SQL and asserts row counts for every query type; env-gated on `WITNESS_TEST_DSN`, skipped otherwise:
@@ -324,6 +364,42 @@ psql "$WITNESS_TEST_DSN" -f observers/postgres/000_schema.up.sql \
 (cd observers/postgres && go test ./...)                       # observer integration tests
 (cd observers/postgres/monitors/grafana/plugin && GOWORK=off go test ./...)   # view/query tests
 ```
+
+There are two dashboards. `witness-overview.json` is raw SQL against the stock Postgres datasource. `witness-trace.json`
+is the Jaeger-style waterfall and needs the **plugin**: only a backend datasource can return a frame typed
+`PreferredVisualization: trace`, which is what Grafana's traces panel renders. `queries.RunTrace` builds that frame,
+re-parenting a span reached across a process boundary onto the *sending* span (link preferred over chain parent) so
+the tree stays connected where witness records a link. What lands in which section of the trace view: `tags` →
+"Span attributes", the records of **both** lifecycle events *and* of the span's own `span:message:received` (what a
+caller attaches on the way out is as much an attribute as what it attached on the way in, and the records given to
+`witness.Handle`/`HandleAll` land on the received event, which is the only place they exist — reading the start alone
+left every Handle-opened span with an empty attributes panel). Only the receiving half: a `sent` or a `link` describes
+a message this span gave away, so its records stay marks on the bar; `serviceTags` → "Resource attributes", which is the *instance* — its
+name, its online time, its span_id and the records of its own `span:instance:online` / `:offline` events (the section
+heading is Grafana's own string, not ours); `logs` → the marks on the bar, every event whose own span it is except the
+two that are the bar itself, each carrying its event type as a field. **Times are fractional milliseconds** —
+`startTime`, `duration` and each mark's timestamp. Rounding any of them to whole milliseconds drifts a mark up to 1ms
+against a bar drawn from fractional values, which on a 6ms span reads as an event outside its own span; that was a
+real bug, not a hypothetical. The plugin's `dist/module.js` is hand-written — the backend
+does all the work, so the frontend only registers a `DataSourceWithBackend` and interpolates dashboard variables into
+the query JSON; there is no query editor UI, and provisioned dashboards carry their queries.
+
+`testenv` is the same stack under testcontainers, and the one to reach for now: one test function starts Postgres
+(schema + views as init scripts), Kafka and Grafana with this plugin built from the working copy, runs two services
+that keep emitting until Ctrl-C, and removes everything after. Run it with
+`WITNESS_TESTENV=1 go test -count=1 -v -timeout 0 -run TestEnv ./testenv` — every flag is load-bearing and
+`testenv/README.md` says why (chiefly: a hang-until-Ctrl-C test still caches its PASS, so without `-count=1` the second
+run starts nothing and replays the first run's output, and without `WITNESS_TESTENV` it skips so a workspace-wide
+`go test ./...` does not hang forever). Two settings there were found the hard way: Postgres needs `ShmSize` raised
+above the 64MB default or the trace query fails with `could not resize shared memory segment`, and the host bind
+mounts (plugin `dist`, `provisioning`, the staged dashboard) go through `HostConfigModifier`, since testcontainers'
+`Mounts` API is volumes-only.
+
+`scripts/demo.sh up` brings the whole thing up — Postgres on :55432, this Grafana on :3000 with the dashboard and
+datasource provisioned, the three services from `examples/distributed` writing into it, and some traffic — and
+`scripts/demo.sh down` removes it. It builds the services rather than `go run`ning them, because `go run`'s pid is the
+toolchain's and killing it leaves the service holding its port. The datasource URL comes from `WITNESS_PG_URL`;
+Grafana expands env vars in provisioning files.
 
 The dashboard panels do not go through the plugin — they are raw SQL against the Postgres datasource, so a view change
 means editing `dashboards/witness-overview.json` (and its `dashboard.json` copy) too. Two traps found the hard way, both
@@ -458,6 +534,33 @@ the time of writing; re-check before acting.
   event, and SQL-side aggregation over metric values needs a cast.
 - **No retention or partitioning.** Append-only, three tables growing linearly,
   `records` fastest.
+
+### To consider: a monotonic clock on the event (important)
+
+`event_date` is wall clock — `time.Now()` on the emitting process, stored as
+`timestamp`. Every duration in the system is a subtraction of two of those:
+`span_pairs.duration`, `link_edges`' wait, the bar the trace waterfall draws.
+Wall clock is not monotonic: NTP steps it, leap seconds are smeared, a VM
+resumes with a corrected clock, and containers inherit whatever the host did.
+A step between a span's start and its finish shows up as a duration that
+jumped or went negative, and nothing in the model can tell that from a real
+one.
+
+The direction to look at is carrying a **second, monotonic reading** on the
+event — Go's `time.Time` already holds one, but it is dropped by every
+serialisation, so it would have to be an explicit field (nanoseconds since
+process start is the obvious encoding). Points worth settling before doing it:
+
+- It is only comparable **within one instance**. Two processes' monotonic
+  clocks share no origin, so a cross-process wait (`link_edges`) still has to
+  use wall clock, and the schema would carry two answers whose disagreement is
+  itself information.
+- Which one the views prefer: same-span and same-instance durations should
+  come from the monotonic pair when both events have it, and fall back to
+  wall clock otherwise — every event is optional, so "both have it" is not
+  guaranteed.
+- Cost: one `int8` per event row and one field on the wire, on a table that is
+  already the fastest-growing thing in the schema.
 
 ### Event types
 

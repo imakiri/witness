@@ -1,1 +1,8 @@
 .idea
+
+# scripts/demo.sh runtime state
+.demo-pids
+.demo-*.log
+.demo-bin/
+observers/postgres/monitors/grafana/plugin/dist/
+.demo-dashboards/
