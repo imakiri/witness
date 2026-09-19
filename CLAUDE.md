@@ -189,7 +189,10 @@ Consequence worth knowing: most observers no longer import `witness` at all — 
 - **`caller`** (`core/caller.go`) — attaches the source location of the witness call to every event, as `file:line`.
   Walks exactly **one** frame (`runtime.Callers` applies `skip` itself, so everything past the first entry was always
   discarded) and caches `file:line` by pc in a `sync.Map`, because symbolisation is the expensive half and its answer
-  never changes for a given pc. That took `Caller` from 527 ns / 4 allocs to ~140 ns / 1 alloc, which matters because
+  never changes for a given pc. That took `Caller` from 527 ns / 4 allocs to ~110 ns / 0 allocs — the pc buffer is a
+  one-element local array and symbolisation lives in its own function, because `CallersFrames` keeps the slice it is
+  given and would otherwise move that array to the heap on every call (a `sync.Pool` of slices is not the fix: `Put`
+  boxes the slice header and allocates too). It matters because
   it was 99% of the cost of a witness call — see `bench_test.go`. `SetCallDepth` is a deprecated no-op; there is no
   depth to configure. `Caller(skip)` counts frames above its own caller:
   **0 is the line on which `Caller` is written, 1 is that line's caller.** Every entry point in `witness` passes 1,
@@ -564,13 +567,20 @@ process start is the obvious encoding). Points worth settling before doing it:
 
 ### Event types
 
-- **The sign convention is load-bearing in SQL and enforced nowhere.**
-  `views.up.sql` hardcodes `event_type BETWEEN 20 AND 29` (open) and
-  `BETWEEN -29 AND -20` (close), so **custom span types (`|i| >= 1000`, paired
-  ±) are invisible** to `span_starts`/`span_finishes`/`span_pairs`/
-  `span_children` — no duration, no parenthood. Carrying open/close/point as a
-  field on `EventType` rather than encoding it in the sign of the id is the fix
-  direction.
+- **The sign convention is load-bearing in SQL and enforced nowhere in Go.**
+  `EventType` carries no open/close/point field, so SQL has to infer it. It
+  does so in exactly one place now — `witness.span_start_types` /
+  `witness.span_finish_types` in `000_schema.up.sql`, read by both
+  `merge_span_cache` and `span_starts`/`span_finishes`, so the cache and the
+  views cannot disagree. A custom type counts as a span boundary only if the
+  **opposite sign is registered too**: `MustNewEventType` enforces `|i| >=
+  1000` and nothing else, and an unpaired custom type is a point event that
+  would otherwise name the span after itself and date it from itself.
+  Pairing is inferred from `witness.event_types`, so a type registered after
+  the observer was built reads as a point event until the next start-up or
+  `rebuild_span_cache()` — one more reason custom types belong in `init()`.
+  Carrying the role as a field on `EventType` remains the fix direction; it
+  would replace the inference, not just the two views.
 - **Dead or half-wired types.** `EventTypeLog()` (1) and `EventTypeMetric()` (3)
   are registered and never emitted — they are categories dressed as types.
   `EventTypeMetricGauge()` (30) is registered but

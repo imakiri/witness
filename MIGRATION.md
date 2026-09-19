@@ -316,6 +316,18 @@ New table, written by the postgres observer at start-up from
 `monitors/grafana/views.up.sql`, where `event_type_names` is now a view over
 it instead of a hand-maintained `VALUES` list.
 
+Upgrading an existing install: `000_schema.up.sql` is written for an empty
+database and its `CREATE SCHEMA` fails on one that already exists, so follow
+the in-place list in that file's header comment — it names this table, the
+two `span_*_types` views and the whole span cache. Order: DDL, then the new
+binary, then `SELECT witness.rebuild_span_cache()`. `NewObserver` now
+upserts the event types at construction and returns an error when the table
+is missing, so it will not come up against the old schema; and the rebuild
+classifies span boundaries through `witness.span_start_types`, which reads
+`witness.event_types` — run before the binary has filled it, it would leave
+every historical custom-typed span unnamed and unstarted in the cache, and
+nothing revisits those rows afterwards.
+
 This is what makes custom types visible to SQL: `MustNewEventType` /
 `MustNewErrorEventType` registrations are upserted like any built-in, so they
 are named in the UI and counted as errors. The plugin's `errorEventTypes` and
@@ -501,10 +513,15 @@ nothing produces any more was not worth carrying.
 Apply `000_schema.up.sql` to an empty database. Upgrading an existing
 install in place: the header comment of that file has the `ALTER` block
 (drop `trace_id`, `parent_trace_id`, `parent_span_id`, `service_name`; add
-`witness.spans.span_flags int8`) plus the two new partial indexes. Rows
-written before it keep `span_flags = 0`, which reads as "the producer did
-not report roles" — they are not backfilled, because the ordering the roles
-are derived from was never stored.
+`witness.spans.span_flags int8` and the denormalised `event_date` on
+`witness.spans` / `witness.records`) plus the new indexes, the list of
+objects to create verbatim — `witness.event_types`, the `span_*_types`
+views and the derived span cache — and the `SELECT
+witness.rebuild_span_cache()` that fills the cache. The DDL goes before the
+new binary, the rebuild after it. Rows written before it keep `span_flags = 0`,
+which reads as "the producer did not report roles" — they are not
+backfilled, because the ordering the roles are derived from was never
+stored.
 
 Replacement queries for the dropped columns:
 

@@ -198,8 +198,11 @@ merge is written against the batch as a set, so the write path wants to become
 one multi-row `INSERT` per table first. That is a win on its own.
 
 **The merges are commutative, which is what makes this correct under witness's
-model**: `first_at` is a `least`, `last_at` a `greatest`, the name and the ids
-`coalesce`, the start the earliest and the finish the latest. A start arriving
+model**: `first_at` is a `least`, `last_at` a `greatest`, the start the
+earliest and the finish the latest — and where an id accompanies a date the
+two are chosen together by comparing `(date, id)` as a tuple, never column by
+column, because a per-column `coalesce` keeps whichever batch arrived first
+and would pair one event's date with another's id. A start arriving
 after its finish, a finish that never arrives, a `sent` written after the
 matching `received` — none of them change the result, because none of the
 merges depends on order. Only `event_count` is non-idempotent: a batch applied

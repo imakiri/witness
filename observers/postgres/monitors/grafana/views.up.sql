@@ -81,7 +81,12 @@ ORDER BY own.span_id, (ei.instance_span_id IS NULL), ei.instance_span_id;
 -- positive event is a `sent` would otherwise be reported as starting there,
 -- and a `received` arriving after a finish would be reported as closing it.
 -- Custom span types registered with witness.MustNewEventType use |i| >= 1000
--- with the same sign convention.
+-- with the same sign convention, and are recognised through
+-- witness.span_start_types / witness.span_finish_types (000_schema.up.sql),
+-- which require the opposite sign to be registered too — an unpaired custom
+-- type is a point event, not a span boundary. The same two views drive
+-- witness.merge_span_cache, so the cache and these views cannot disagree
+-- about what starts a span.
 CREATE OR REPLACE VIEW witness.span_starts AS
 SELECT DISTINCT ON (s.span_id)
     s.span_id,
@@ -95,8 +100,7 @@ SELECT DISTINCT ON (s.span_id)
 FROM witness.events e
 JOIN witness.spans s ON s.event_id = e.event_id AND s.span_flags & 1 <> 0
 LEFT JOIN witness.event_instances ei ON ei.event_id = e.event_id
-WHERE e.event_type BETWEEN 20 AND 21
-   OR e.event_type >= 1000
+WHERE e.event_type IN (SELECT event_type FROM witness.span_start_types)
 ORDER BY s.span_id, e.event_date ASC, e.event_id ASC;
 
 -- Latest "close" event per span_id.
@@ -110,8 +114,7 @@ SELECT DISTINCT ON (s.span_id)
     e.event_caller  AS finish_caller
 FROM witness.events e
 JOIN witness.spans s ON s.event_id = e.event_id AND s.span_flags & 1 <> 0
-WHERE e.event_type BETWEEN -21 AND -20
-   OR e.event_type <= -1000
+WHERE e.event_type IN (SELECT event_type FROM witness.span_finish_types)
 ORDER BY s.span_id, e.event_date DESC, e.event_id DESC;
 
 -- Span lifecycle: start and finish where they exist, duration where both do.

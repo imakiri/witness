@@ -44,11 +44,6 @@ WITH RECURSIVE
 // about those — the panels used to miss every one of them.
 const errorEventTypes = "SELECT event_type FROM witness.event_types WHERE is_error"
 
-// logEventTypes is log and log:* — what the trace view attaches to a span.
-// A name test, so custom log types registered at runtime are included too.
-const logEventTypes = "SELECT event_type FROM witness.event_types" +
-	" WHERE event_type_name = 'log' OR event_type_name LIKE 'log:%'"
-
 // shiftPlaceholders renumbers $N -> $N+1 in a WHERE fragment. Needed when a
 // query gains the trace-walk CTE, whose seed must be $1.
 func shiftPlaceholders(clause string) string {

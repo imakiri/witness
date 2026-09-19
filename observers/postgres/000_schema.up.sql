@@ -41,6 +41,34 @@
 -- not report roles" — they are not backfilled, because the ordering the
 -- roles are derived from was never stored.
 --
+-- An in-place upgrade is not finished after the ALTERs: v0.31 also adds
+-- objects an old installation has none of, and the observer now requires
+-- them. Run verbatim from the body of this file, in this order:
+--
+--   * CREATE TABLE witness.event_types;
+--   * CREATE VIEW  witness.span_start_types / witness.span_finish_types;
+--   * the whole "Derived span cache" section — witness.span_facts,
+--     witness.span_edges, their indexes, and both functions;
+--
+-- then deploy the new binary, and only then:
+--
+--   * SELECT witness.rebuild_span_cache();
+--
+-- Both halves of that order matter. The DDL comes first because NewObserver
+-- upserts core.Events() into witness.event_types at construction and fails
+-- if the table is missing, so an observer started against the old schema
+-- does not come up at all. The rebuild comes last because it classifies
+-- span boundaries through witness.span_start_types, which reads
+-- witness.event_types — run against the empty table it would treat every
+-- historical custom-typed span (|i| >= 1000) as unstarted and unnamed, and
+-- nothing would ever revisit those rows: the cache is only ever updated for
+-- the spans a new batch touches.
+--
+-- The rebuild is not optional either: the cache tables start empty, and
+-- every reader that goes through them (the trace waterfall, the event
+-- trail, witness.span_pairs) returns nothing until it has run — about 5.6 s
+-- per 500k events.
+--
 -- After this file, apply monitors/grafana/views.up.sql for the Grafana views.
 
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
@@ -139,6 +167,37 @@ CREATE TABLE witness.event_types
     is_error        boolean      NOT NULL
 );
 
+-- Which event types open and close a span.
+--
+-- The built-in range is fixed: 20/21 open (span:general:start,
+-- span:instance:online), -21/-20 close. A custom type is a span boundary
+-- only if the *opposite sign is registered too* — core.MustNewEventType
+-- enforces |i| >= 1000 and nothing else, so an unpaired custom type is an
+-- ordinary point event ("cache evicted") and reading it as a span start
+-- would name the span after it and date the span from it.
+--
+-- Pairing is the only signal there is: EventType carries no open/close
+-- field, only the sign convention. The consequence is that a type
+-- registered *after* the observer wrote witness.event_types counts as a
+-- point event until the next start-up or rebuild_span_cache() — the same
+-- caveat the table itself carries, which is why custom types belong in
+-- init().
+CREATE VIEW witness.span_start_types AS
+    SELECT i AS event_type FROM generate_series(20, 21) i
+UNION
+    SELECT t.event_type
+      FROM witness.event_types t
+     WHERE t.event_type >= 1000
+       AND EXISTS (SELECT 1 FROM witness.event_types p WHERE p.event_type = -t.event_type);
+
+CREATE VIEW witness.span_finish_types AS
+    SELECT i AS event_type FROM generate_series(-21, -20) i
+UNION
+    SELECT t.event_type
+      FROM witness.event_types t
+     WHERE t.event_type <= -1000
+       AND EXISTS (SELECT 1 FROM witness.event_types p WHERE p.event_type = -t.event_type);
+
 CREATE TABLE witness.records
 (
     event_id     uuid      NOT NULL REFERENCES witness.events (event_id),
@@ -184,8 +243,9 @@ CREATE INDEX records_key_value
 CREATE TABLE witness.span_facts
 (
     span_id          uuid      NOT NULL PRIMARY KEY,
-    -- From the span's start event where it has one, from its finish where it
-    -- has only that. A span with neither is legal and stays unnamed.
+    -- From the span's start event. A span with no start event is legal and
+    -- stays unnamed: a finish message is the finish's own message, not the
+    -- span's name.
     span_name        varchar,
     started_at       timestamp,
     start_event_id   uuid,
@@ -245,43 +305,75 @@ CREATE INDEX span_edges_back ON witness.span_edges (to_span_id, at DESC);
 -- correct under witness's model rather than merely fast: events are
 -- independent and unordered, so a start may arrive after its finish, a finish
 -- may never arrive, and a `sent` is legitimately written after the matching
--- `received`. first_at is a least, last_at a greatest, names and ids a
--- coalesce, the start the earliest and the finish the latest — none of them
--- depends on the order the events land in. Do not add a field whose merge
--- does.
+-- `received`. first_at is a least, last_at a greatest, the start the earliest
+-- and the finish the latest — none of them depends on the order the events
+-- land in. Where an id accompanies a date the two are chosen together by
+-- comparing (date, id) as a tuple, never column by column: a coalesce keeps
+-- whichever batch arrived first and would pair one event's date with
+-- another's id. Do not add a field whose merge depends on order.
 --
 -- uuid has no min()/max(); an id is picked with (array_agg(... ORDER BY ...))[1]
 -- so the choice matches the ordering the dates were chosen with.
 CREATE FUNCTION witness.merge_span_cache(event_ids uuid[] DEFAULT NULL) RETURNS void AS
 $$
 BEGIN
+    WITH ev AS MATERIALIZED (
+        SELECT e.event_id, e.event_date, e.event_message,
+               e.event_type IN (SELECT event_type FROM witness.span_start_types)  AS is_start,
+               e.event_type IN (SELECT event_type FROM witness.span_finish_types) AS is_finish
+          FROM witness.events e
+         WHERE event_ids IS NULL OR e.event_id = ANY (event_ids)
+    )
     INSERT INTO witness.span_facts AS f
         (span_id, span_name, started_at, start_event_id, finished_at, finish_event_id,
          instance_span_id, first_at, last_at, event_count)
     SELECT own.span_id,
-           (array_agg(e.event_message ORDER BY e.event_date, e.event_id)
-              FILTER (WHERE e.event_type BETWEEN 20 AND 21 OR e.event_type >= 1000))[1],
-           min(e.event_date)
-              FILTER (WHERE e.event_type BETWEEN 20 AND 21 OR e.event_type >= 1000),
-           (array_agg(e.event_id ORDER BY e.event_date, e.event_id)
-              FILTER (WHERE e.event_type BETWEEN 20 AND 21 OR e.event_type >= 1000))[1],
-           max(e.event_date)
-              FILTER (WHERE e.event_type BETWEEN -21 AND -20 OR e.event_type <= -1000),
-           (array_agg(e.event_id ORDER BY e.event_date DESC, e.event_id DESC)
-              FILTER (WHERE e.event_type BETWEEN -21 AND -20 OR e.event_type <= -1000))[1],
+           (array_agg(ev.event_message ORDER BY ev.event_date, ev.event_id)
+              FILTER (WHERE ev.is_start))[1],
+           min(ev.event_date) FILTER (WHERE ev.is_start),
+           (array_agg(ev.event_id ORDER BY ev.event_date, ev.event_id)
+              FILTER (WHERE ev.is_start))[1],
+           max(ev.event_date) FILTER (WHERE ev.is_finish),
+           (array_agg(ev.event_id ORDER BY ev.event_date DESC, ev.event_id DESC)
+              FILTER (WHERE ev.is_finish))[1],
            (array_agg(inst.span_id) FILTER (WHERE inst.span_id IS NOT NULL))[1],
-           min(e.event_date), max(e.event_date), count(*)
-      FROM witness.events e
-      JOIN witness.spans own       ON own.event_id  = e.event_id AND own.span_flags & 1 <> 0
-      LEFT JOIN witness.spans inst ON inst.event_id = e.event_id AND inst.span_flags & 8 <> 0
-     WHERE event_ids IS NULL OR e.event_id = ANY (event_ids)
+           min(ev.event_date), max(ev.event_date), count(*)
+      FROM ev
+      JOIN witness.spans own       ON own.event_id  = ev.event_id AND own.span_flags & 1 <> 0
+      LEFT JOIN witness.spans inst ON inst.event_id = ev.event_id AND inst.span_flags & 8 <> 0
      GROUP BY own.span_id
     ON CONFLICT (span_id) DO UPDATE SET
-        span_name        = coalesce(f.span_name, excluded.span_name),
-        started_at       = least(f.started_at, excluded.started_at),
-        start_event_id   = coalesce(f.start_event_id, excluded.start_event_id),
-        finished_at      = greatest(f.finished_at, excluded.finished_at),
-        finish_event_id  = coalesce(f.finish_event_id, excluded.finish_event_id),
+        -- The start's date, id and name are three columns describing *one*
+        -- event, so they are chosen together: a per-column coalesce keeps
+        -- whichever batch landed first and would pair one event's date with
+        -- another's id when the two halves arrive out of order. The tuple
+        -- (date, id) is compared with the ordering array_agg used above, so
+        -- the result does not depend on the order batches land in.
+        span_name        = CASE WHEN f.started_at IS NULL
+                                  OR (excluded.started_at IS NOT NULL
+                                 AND (excluded.started_at, excluded.start_event_id)
+                                   < (f.started_at, f.start_event_id))
+                                THEN excluded.span_name ELSE f.span_name END,
+        started_at       = CASE WHEN f.started_at IS NULL
+                                  OR (excluded.started_at IS NOT NULL
+                                 AND (excluded.started_at, excluded.start_event_id)
+                                   < (f.started_at, f.start_event_id))
+                                THEN excluded.started_at ELSE f.started_at END,
+        start_event_id   = CASE WHEN f.started_at IS NULL
+                                  OR (excluded.started_at IS NOT NULL
+                                 AND (excluded.started_at, excluded.start_event_id)
+                                   < (f.started_at, f.start_event_id))
+                                THEN excluded.start_event_id ELSE f.start_event_id END,
+        finished_at      = CASE WHEN f.finished_at IS NULL
+                                  OR (excluded.finished_at IS NOT NULL
+                                 AND (excluded.finished_at, excluded.finish_event_id)
+                                   > (f.finished_at, f.finish_event_id))
+                                THEN excluded.finished_at ELSE f.finished_at END,
+        finish_event_id  = CASE WHEN f.finished_at IS NULL
+                                  OR (excluded.finished_at IS NOT NULL
+                                 AND (excluded.finished_at, excluded.finish_event_id)
+                                   > (f.finished_at, f.finish_event_id))
+                                THEN excluded.finish_event_id ELSE f.finish_event_id END,
         instance_span_id = coalesce(f.instance_span_id, excluded.instance_span_id),
         first_at         = least(f.first_at, excluded.first_at),
         last_at          = greatest(f.last_at, excluded.last_at),
@@ -290,23 +382,34 @@ BEGIN
     -- Parenthood is stated by every event of the child (span_flags & 2), so
     -- it does not wait for a start event; the cut does, and is NULL until one
     -- arrives.
+    WITH ev AS MATERIALIZED (
+        SELECT e.event_id, e.event_date,
+               e.event_type IN (SELECT event_type FROM witness.span_start_types) AS is_start
+          FROM witness.events e
+         WHERE event_ids IS NULL OR e.event_id = ANY (event_ids)
+    )
     INSERT INTO witness.span_edges AS ed
         (to_span_id, from_span_id, relation, cut_date, cut_id, guard_date, guard_id, at)
     SELECT own.span_id, par.span_id, 'parent',
-           min(e.event_date)
-              FILTER (WHERE e.event_type BETWEEN 20 AND 21 OR e.event_type >= 1000),
-           (array_agg(e.event_id ORDER BY e.event_date, e.event_id)
-              FILTER (WHERE e.event_type BETWEEN 20 AND 21 OR e.event_type >= 1000))[1],
+           min(ev.event_date) FILTER (WHERE ev.is_start),
+           (array_agg(ev.event_id ORDER BY ev.event_date, ev.event_id)
+              FILTER (WHERE ev.is_start))[1],
            NULL, NULL,
-           min(e.event_date)
-      FROM witness.events e
-      JOIN witness.spans own ON own.event_id = e.event_id AND own.span_flags & 1 <> 0
-      JOIN witness.spans par ON par.event_id = e.event_id AND par.span_flags & 2 <> 0
-     WHERE event_ids IS NULL OR e.event_id = ANY (event_ids)
+           min(ev.event_date)
+      FROM ev
+      JOIN witness.spans own ON own.event_id = ev.event_id AND own.span_flags & 1 <> 0
+      JOIN witness.spans par ON par.event_id = ev.event_id AND par.span_flags & 2 <> 0
      GROUP BY own.span_id, par.span_id
     ON CONFLICT (to_span_id, from_span_id, relation) DO UPDATE SET
-        cut_date = least(ed.cut_date, excluded.cut_date),
-        cut_id   = coalesce(ed.cut_id, excluded.cut_id),
+        -- Date and id come from one event, as in span_facts above.
+        cut_date = CASE WHEN ed.cut_date IS NULL
+                          OR (excluded.cut_date IS NOT NULL
+                         AND (excluded.cut_date, excluded.cut_id) < (ed.cut_date, ed.cut_id))
+                        THEN excluded.cut_date ELSE ed.cut_date END,
+        cut_id   = CASE WHEN ed.cut_date IS NULL
+                          OR (excluded.cut_date IS NOT NULL
+                         AND (excluded.cut_date, excluded.cut_id) < (ed.cut_date, ed.cut_id))
+                        THEN excluded.cut_id ELSE ed.cut_id END,
         at       = least(ed.at, excluded.at);
 
     -- The hand-off edge, resolved for every link this batch touched. Both
@@ -353,10 +456,23 @@ BEGIN
       JOIN give gv ON gv.link_span_id = tk.link_span_id
                   AND gv.span_id IS DISTINCT FROM tk.span_id
     ON CONFLICT (to_span_id, from_span_id, relation) DO UPDATE SET
-        cut_date   = least(ed.cut_date, excluded.cut_date),
-        cut_id     = coalesce(ed.cut_id, excluded.cut_id),
-        guard_date = least(ed.guard_date, excluded.guard_date),
-        guard_id   = coalesce(ed.guard_id, excluded.guard_id),
+        -- Each date and its id come from one event, as in span_facts above.
+        cut_date   = CASE WHEN ed.cut_date IS NULL
+                            OR (excluded.cut_date IS NOT NULL
+                           AND (excluded.cut_date, excluded.cut_id) < (ed.cut_date, ed.cut_id))
+                          THEN excluded.cut_date ELSE ed.cut_date END,
+        cut_id     = CASE WHEN ed.cut_date IS NULL
+                            OR (excluded.cut_date IS NOT NULL
+                           AND (excluded.cut_date, excluded.cut_id) < (ed.cut_date, ed.cut_id))
+                          THEN excluded.cut_id ELSE ed.cut_id END,
+        guard_date = CASE WHEN ed.guard_date IS NULL
+                            OR (excluded.guard_date IS NOT NULL
+                           AND (excluded.guard_date, excluded.guard_id) < (ed.guard_date, ed.guard_id))
+                          THEN excluded.guard_date ELSE ed.guard_date END,
+        guard_id   = CASE WHEN ed.guard_date IS NULL
+                            OR (excluded.guard_date IS NOT NULL
+                           AND (excluded.guard_date, excluded.guard_id) < (ed.guard_date, ed.guard_id))
+                          THEN excluded.guard_id ELSE ed.guard_id END,
         at         = least(ed.at, excluded.at);
 END;
 $$ LANGUAGE plpgsql;

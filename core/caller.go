@@ -3,15 +3,8 @@ package core
 import (
 	"runtime"
 	"strconv"
-
 	"sync"
 )
-
-// pcPool holds one-element pc buffers. One element is all Caller ever needs:
-// runtime.Callers applies skip itself, so the frame being reported is the
-// first it writes — the buffer of 16 this used to allocate had every entry
-// but the first thrown away, and paid for walking them.
-var pcPool = sync.Pool{New: func() any { return make([]uintptr, 1) }}
 
 // callerCache maps a pc to the "file:line" it resolves to. Symbolisation is
 // the expensive half of Caller (runtime.CallersFrames plus building the
@@ -64,10 +57,14 @@ func SetCallDepth(int) {}
 // its own frame sitting on the witness call, and reports it correctly.
 // Constructors returning a Finish capture their call site eagerly and are immune.
 func Caller(skip int) string {
-	var pc = pcPool.Get().([]uintptr)
-	defer pcPool.Put(pc)
+	// One frame is all Caller ever needs: runtime.Callers applies skip
+	// itself, so the frame being reported is the first it writes. A
+	// fixed-size local array does not escape, which a sync.Pool of slices
+	// could not match — Put boxes the slice header into an interface and
+	// allocates on every call.
+	var pc [1]uintptr
 
-	var n = runtime.Callers(skip+2, pc)
+	var n = runtime.Callers(skip+2, pc[:])
 	if n == 0 {
 		return ""
 	}
@@ -75,7 +72,20 @@ func Caller(skip int) string {
 		return v.(string)
 	}
 
-	var frame, _ = runtime.CallersFrames(pc).Next()
+	var s = resolve(pc[0])
+	if s == "" {
+		return ""
+	}
+	callerCache.Store(pc[0], s)
+	return s
+}
+
+// resolve symbolises one pc. It is a function of its own because
+// CallersFrames keeps the slice it is given, which would move Caller's pc
+// buffer to the heap on every call — here the escape is paid only on a cache
+// miss, i.e. once per call site in the binary.
+func resolve(pc uintptr) string {
+	var frame, _ = runtime.CallersFrames([]uintptr{pc}).Next()
 	if frame.File == "" {
 		return ""
 	}
@@ -84,7 +94,5 @@ func Caller(skip int) string {
 	b = append(b, frame.File...)
 	b = append(b, ':')
 	b = strconv.AppendInt(b, int64(frame.Line), 10)
-	var s = string(b)
-	callerCache.Store(pc[0], s)
-	return s
+	return string(b)
 }

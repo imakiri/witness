@@ -576,3 +576,148 @@ func TestObserverDrainsOnClose(t *testing.T) {
 		t.Errorf("events in DB: got %d, want %d", count, total)
 	}
 }
+
+// TestSpanCacheClassifiesAndMergesInAnyOrder pins the two rules
+// witness.merge_span_cache is easy to get wrong, and both are invisible
+// until a query reads the wrong row back.
+//
+//   - A custom event type (|i| >= 1000) opens a span only if the opposite
+//     sign is registered too. MustNewEventType enforces the magnitude and
+//     nothing else, so an unpaired custom type is a point event — reading it
+//     as a start would name the span after it and date the span from it.
+//   - The merge is order-independent down to the pairing of a date with its
+//     event id: two batches carrying two start-shaped events of one span may
+//     arrive in either order and must leave started_at and start_event_id
+//     describing the same event.
+//
+// SQL-level: the observer has no way to emit either shape. Integration test,
+// env-gated.
+func TestSpanCacheClassifiesAndMergesInAnyOrder(t *testing.T) {
+	dsn := os.Getenv("WITNESS_TEST_DSN")
+	if dsn == "" {
+		t.Skip("WITNESS_TEST_DSN not set; skipping integration test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	defer admin.Close()
+
+	if _, err := admin.Exec(ctx, "DROP SCHEMA IF EXISTS witness CASCADE"); err != nil {
+		t.Fatalf("drop schema: %v", err)
+	}
+	if _, err := admin.Exec(ctx, schemaSQL); err != nil {
+		t.Fatalf("apply schema: %v", err)
+	}
+
+	// 5000 is registered on its own: a point event. 1500/-1500 are a pair:
+	// a custom span type.
+	if _, err := admin.Exec(ctx, `
+		INSERT INTO witness.event_types (event_type, event_type_name, is_error) VALUES
+		  (20, 'span:general:start', false), (-20, 'span:general:finish', false),
+		  (5000, 'cache:evicted', false),
+		  (1500, 'job:start', false), (-1500, 'job:finish', false)`); err != nil {
+		t.Fatalf("seed event_types: %v", err)
+	}
+
+	const (
+		spanPoint  = "00000000-0000-4000-9000-000000000001"
+		spanCustom = "00000000-0000-4000-9000-000000000002"
+		spanOrder  = "00000000-0000-4000-9000-000000000003"
+
+		evictEvent = "00000000-0000-4000-8000-000000000001"
+		startEvent = "00000000-0000-4000-8000-000000000002"
+		jobEvent   = "00000000-0000-4000-8000-000000000003"
+		lateStart  = "00000000-0000-4000-8000-000000000004"
+		earlyStart = "00000000-0000-4000-8000-000000000005"
+	)
+
+	if _, err := admin.Exec(ctx, `
+		INSERT INTO witness.events (event_id, event_date, event_type, event_message, event_caller) VALUES
+		  ($1, timestamp '2026-01-01 10:00:00', 5000,  'cache evicted', 'c.go:1'),
+		  ($2, timestamp '2026-01-01 10:00:01', 20,    'real start',    'c.go:2'),
+		  ($3, timestamp '2026-01-01 10:00:02', 1500,  'nightly job',   'c.go:3'),
+		  ($4, timestamp '2026-01-01 10:00:09', 20,    'retried',       'c.go:4'),
+		  ($5, timestamp '2026-01-01 10:00:04', 20,    'first attempt', 'c.go:4')`,
+		evictEvent, startEvent, jobEvent, lateStart, earlyStart); err != nil {
+		t.Fatalf("seed events: %v", err)
+	}
+	if _, err := admin.Exec(ctx, `
+		INSERT INTO witness.spans (event_id, event_date, span_id, span_flags)
+		SELECT e.event_id, e.event_date, s.span_id, 1
+		  FROM (VALUES ($1::uuid, $6::uuid), ($2, $6), ($3, $7), ($4, $8), ($5, $8))
+		       AS s(event_id, span_id)
+		  JOIN witness.events e ON e.event_id = s.event_id`,
+		evictEvent, startEvent, jobEvent, lateStart, earlyStart,
+		spanPoint, spanCustom, spanOrder); err != nil {
+		t.Fatalf("seed spans: %v", err)
+	}
+
+	// Merge the point event first: if it were read as a start it would win
+	// on date and keep its name, because the start is chosen once.
+	if _, err := admin.Exec(ctx,
+		`SELECT witness.merge_span_cache(ARRAY[$1::uuid, $2::uuid])`, evictEvent, lateStart); err != nil {
+		t.Fatalf("merge first batch: %v", err)
+	}
+	if _, err := admin.Exec(ctx,
+		`SELECT witness.merge_span_cache(ARRAY[$1::uuid, $2::uuid, $3::uuid])`,
+		startEvent, jobEvent, earlyStart); err != nil {
+		t.Fatalf("merge second batch: %v", err)
+	}
+
+	var (
+		name    *string
+		started *time.Time
+		startID *string
+	)
+	if err := admin.QueryRow(ctx, `
+		SELECT span_name, started_at, start_event_id::text
+		  FROM witness.span_facts WHERE span_id = $1`, spanPoint).Scan(&name, &started, &startID); err != nil {
+		t.Fatalf("span_facts for the span holding a custom point event: %v", err)
+	}
+	if name == nil || *name != "real start" {
+		t.Errorf("span_name = %v, want the span:general:start message — an unpaired custom type is not a start", str1(name))
+	}
+	if startID == nil || *startID != startEvent {
+		t.Errorf("start_event_id = %v, want the real start event", str1(startID))
+	}
+
+	if err := admin.QueryRow(ctx, `
+		SELECT span_name FROM witness.span_facts WHERE span_id = $1`, spanCustom).Scan(&name); err != nil {
+		t.Fatalf("span_facts for the custom-typed span: %v", err)
+	}
+	if name == nil || *name != "nightly job" {
+		t.Errorf("span_name = %v, want the custom start's message — 1500 is paired with -1500", str1(name))
+	}
+
+	if err := admin.QueryRow(ctx, `
+		SELECT span_name, started_at, start_event_id::text
+		  FROM witness.span_facts WHERE span_id = $1`, spanOrder).Scan(&name, &started, &startID); err != nil {
+		t.Fatalf("span_facts for the twice-started span: %v", err)
+	}
+	// The later start was merged first; the earlier one must still win, and
+	// the name and id must come from that same event rather than from
+	// whichever batch landed first.
+	if startID == nil || *startID != earlyStart {
+		t.Errorf("start_event_id = %v, want the earliest start regardless of merge order", str1(startID))
+	}
+	if started == nil || !started.Equal(time.Date(2026, 1, 1, 10, 0, 4, 0, time.UTC)) {
+		t.Errorf("started_at = %v, want the earliest start's date", started)
+	}
+	if name == nil || *name != "first attempt" {
+		t.Errorf("span_name = %v, want the earliest start's message", str1(name))
+	}
+}
+
+// str1 renders a nullable text column for a failure message: the pointer
+// itself says nothing.
+func str1(s *string) string {
+	if s == nil {
+		return "NULL"
+	}
+	return *s
+}
