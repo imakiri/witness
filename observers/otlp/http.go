@@ -3,7 +3,9 @@ package otlp
 import (
 	"net/http"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/imakiri/witness"
+	"github.com/imakiri/witness/propagation"
 )
 
 // Transport wraps base so every outgoing request gets a traceparent header
@@ -19,10 +21,12 @@ func Transport(base http.RoundTripper) http.RoundTripper {
 type transport struct{ base http.RoundTripper }
 
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	spans := witness.From(req.Context()).SpanIDs()
-	if len(spans) > 0 {
+	// TraceID, not SpanIDs()[0]: after InstanceContinue the first span is the
+	// local root, and a second hop would leave with a foreign trace_id.
+	c := witness.From(req.Context())
+	if c.TraceID() != uuid.Nil && c.CurrentSpanID() != uuid.Nil {
 		req = req.Clone(req.Context())
-		Inject(req.Header, spans[0], spans[len(spans)-1])
+		propagation.Inject(req.Header, c.TraceID(), c.CurrentSpanID())
 	}
 	return t.base.RoundTrip(req)
 }
@@ -36,7 +40,7 @@ func Middleware(observer witness.Observer, name, version string) func(http.Handl
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 			var finish witness.Finish
-			if traceID, parentSpanID, ok := Extract(r.Header); ok {
+			if traceID, parentSpanID, ok := propagation.Extract(r.Header); ok {
 				ctx, finish = witness.InstanceContinue(ctx, observer, name, version, traceID, parentSpanID)
 			} else {
 				ctx, finish = witness.Instance(ctx, observer, name, version)

@@ -51,6 +51,7 @@ func NewTraceProvider(ctx context.Context, cfg ProviderConfig) (*sdktrace.Tracer
 		sdktrace.WithBatcher(exporter, cfg.BatchOpts...),
 		sdktrace.WithResource(res),
 		sdktrace.WithSampler(sampler),
+		sdktrace.WithIDGenerator(IDGenerator()),
 	), nil
 }
 
