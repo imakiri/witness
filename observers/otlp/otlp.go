@@ -7,8 +7,11 @@
 // Message events (internal/external) become AddEvent with the msg_id attached
 // as an attribute. Metric events are dropped — use the prometheus observer.
 //
-// trace_id is the first 16 bytes of the root witness span_id; span_id is the
-// last 8 bytes of the current one. Pure byte copies, no string parsing.
+// trace_id is the witness trace_id (the root span_id, or the upstream one after
+// InstanceContinue); span_id is the last 8 bytes of the current witness span_id.
+// Pure byte copies, no string parsing. Both reach OTel through IDGenerator, so a
+// traceparent built by propagation.Inject names a span that exists in the
+// backend and the receiver nests under it.
 package otlp
 
 import (
@@ -26,6 +29,9 @@ import (
 const TracerName = "github.com/imakiri/witness"
 
 type Config struct {
+	// Provider must be built with sdktrace.WithIDGenerator(IDGenerator()), as
+	// NewTraceProvider does. Without it span ids are random and traces do not
+	// chain across hops.
 	Provider *sdktrace.TracerProvider
 }
 
@@ -119,46 +125,64 @@ func (o *Observer) startSpan(event witness.Event) {
 	if !ok {
 		return
 	}
-	rootID, _ := rootSpanID(event)
-	parentCtx := o.parentContext(event, rootID)
+	traceID := event.TraceID
+	if traceID == uuid.Nil {
+		traceID, _ = rootSpanID(event)
+	}
+	parentCtx, opts := o.parentContext(event, traceID)
+	parentCtx = withIDs(parentCtx, traceID, curID)
 	attrs := recordsToAttributes(event.Records)
 	attrs = append(attrs,
 		attribute.String("witness.event_caller", event.EventCaller),
 		attribute.String("witness.event_type", event.EventType.String()),
 	)
-	_, span := o.tracer.Start(parentCtx, event.EventMessage,
+	opts = append(opts,
 		trace.WithTimestamp(event.EventDate),
 		trace.WithAttributes(attrs...),
 	)
+	_, span := o.tracer.Start(parentCtx, event.EventMessage, opts...)
 	o.reg.Set(curID, span)
 }
 
-// parentContext nests the new span under its registered parent if any. For
-// cross-service continuation (ParentTraceID set) it pins parent to the
-// upstream SpanContext. Otherwise it synthesizes a remote SpanContext from
-// the root span_id so every span in the same witness instance shares one
-// trace_id.
-func (o *Observer) parentContext(event witness.Event, rootID uuid.UUID) context.Context {
+// parentContext picks the parent of the span about to start; the span's own
+// ids come from IDGenerator via withIDs.
+//
+//   - Registered parent: nest under the live span. If witness.Trace switched
+//     the trace_id mid-chain, start a new root linked to that parent instead —
+//     OTel would otherwise keep the parent's trace_id while traceparent carries
+//     the new one.
+//   - Cross-service continuation (ParentTraceID set): pin the parent to the
+//     upstream SpanContext from traceparent.
+//   - Instance root (one span in the chain): no parent at all. A synthesized
+//     parent would carry the span's own id and make it its own parent.
+//   - Parent never started (NewContext root, lost start event): reference the
+//     direct parent's id remotely so the span stays in its trace.
+func (o *Observer) parentContext(event witness.Event, traceID uuid.UUID) (context.Context, []trace.SpanStartOption) {
 	ctx := context.Background()
-	if parent, ok := parentSpanID(event); ok {
+	parent, hasParent := parentSpanID(event)
+	if hasParent {
 		if parentSpan, found := o.reg.Get(parent); found {
-			return trace.ContextWithSpan(ctx, parentSpan)
+			// witness.Trace mints the new trace_id from the span it opens; no other
+			// constructor makes a child its own trace.
+			if cur, _ := currentSpanID(event); traceID == cur {
+				return ctx, []trace.SpanStartOption{trace.WithNewRoot(), trace.WithLinks(trace.Link{SpanContext: parentSpan.SpanContext()})}
+			}
+			return trace.ContextWithSpan(ctx, parentSpan), nil
 		}
 	}
 	if event.ParentTraceID != uuid.Nil {
-		sc := trace.NewSpanContext(trace.SpanContextConfig{
-			TraceID:    traceIDFromUUID(event.ParentTraceID),
-			SpanID:     spanIDFromUUID(event.ParentSpanID),
-			TraceFlags: trace.FlagsSampled,
-			Remote:     true,
-		})
-		if sc.IsValid() {
-			return trace.ContextWithSpanContext(ctx, sc)
-		}
+		return remoteParent(ctx, event.ParentTraceID, event.ParentSpanID), nil
 	}
+	if !hasParent {
+		return ctx, nil
+	}
+	return remoteParent(ctx, traceID, parent), nil
+}
+
+func remoteParent(ctx context.Context, traceID, spanID uuid.UUID) context.Context {
 	sc := trace.NewSpanContext(trace.SpanContextConfig{
-		TraceID:    traceIDFromUUID(rootID),
-		SpanID:     spanIDFromUUID(rootID),
+		TraceID:    traceIDFromUUID(traceID),
+		SpanID:     spanIDFromUUID(spanID),
 		TraceFlags: trace.FlagsSampled,
 		Remote:     true,
 	})

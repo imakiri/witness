@@ -19,8 +19,8 @@ func TestCrossServiceTraceContinuity(t *testing.T) {
 	senderRec := tracetest.NewSpanRecorder()
 	receiverRec := tracetest.NewSpanRecorder()
 
-	senderObs, _ := NewObserver(Config{Provider: sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(senderRec))})
-	receiverObs, _ := NewObserver(Config{Provider: sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(receiverRec))})
+	senderObs, _ := NewObserver(Config{Provider: sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(senderRec), sdktrace.WithIDGenerator(IDGenerator()))})
+	receiverObs, _ := NewObserver(Config{Provider: sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(receiverRec), sdktrace.WithIDGenerator(IDGenerator()))})
 
 	srv := httptest.NewServer(Middleware(receiverObs, "service_b", "v1")(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +80,11 @@ func TestCrossServiceTraceContinuity(t *testing.T) {
 	}
 	if !(*instanceOnline).Parent().IsValid() {
 		t.Fatalf("receiver instance:online has no parent — cross-service link missing")
+	}
+	for _, s := range sender {
+		if s.Name() == "call_b" && (*instanceOnline).Parent().SpanID() != s.SpanContext().SpanID() {
+			t.Fatalf("receiver parent %s, want call_b %s", (*instanceOnline).Parent().SpanID(), s.SpanContext().SpanID())
+		}
 	}
 }
 

@@ -3,6 +3,31 @@
 Witness is pre-1.0. Breaking changes are called out here, newest first;
 everything not listed is additive.
 
+## observers/otlp v0.2.1 — OTel span ids are the witness ones
+
+OTel span ids used to be random, so a `traceparent` built from witness ids
+named a span that never reached the backend: the receiver shared the trace
+but hung as a detached root. The observer now hands the witness ids to OTel
+through `otlp.IDGenerator()`, and a continued span nests under its sender.
+
+`NewTraceProvider` wires the generator in. A provider built by hand and
+passed to `Config.Provider` needs it explicitly:
+
+```go
+tp := sdktrace.NewTracerProvider(
+    sdktrace.WithBatcher(exporter),
+    sdktrace.WithIDGenerator(otlp.IDGenerator()),
+)
+```
+
+Without it instance roots now get a random trace id (they no longer carry a
+synthesized parent), so traces do not chain across hops at all.
+
+`otlp.Transport` sends `TraceID()` instead of the first span of the chain:
+after `InstanceContinue` that span is the local root, and a second hop left
+with a foreign trace id. `witness.Trace` now opens a new OTel root linked to
+its parent instead of staying in the parent's trace.
+
 ## v0.27 — `Observer.Observe` takes an `Event` struct
 
 The interface went from seven positional arguments plus a variadic to a
