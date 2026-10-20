@@ -5,6 +5,7 @@ use (
 	./adapters/log
 	./examples
 	./examples/distributed
+	./observers/dynatrace
 	./observers/multi
 	./observers/otlp
 	./observers/postgres
@@ -17,7 +18,9 @@ use (
 )
 
 // --- release.sh: intra-repo replaces (regenerated) ---
+replace github.com/imakiri/witness v0.30.0 => .
 replace github.com/imakiri/witness/adapters/log v0.5.0 => ./adapters/log
+replace github.com/imakiri/witness/observers/dynatrace v0.1.0 => ./observers/dynatrace
 replace github.com/imakiri/witness/observers/multi v0.1.0 => ./observers/multi
 replace github.com/imakiri/witness/observers/otlp v0.2.1 => ./observers/otlp
 replace github.com/imakiri/witness/observers/postgres v0.3.0 => ./observers/postgres
@@ -27,5 +30,4 @@ replace github.com/imakiri/witness/observers/tee v0.6.0 => ./observers/tee
 replace github.com/imakiri/witness/observers/test v0.4.0 => ./observers/test
 replace github.com/imakiri/witness/printers v0.1.0 => ./printers
 replace github.com/imakiri/witness/record v0.20.0 => ./record
-replace github.com/imakiri/witness v0.30.0 => .
 // --- end release.sh ---
