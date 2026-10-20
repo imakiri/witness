@@ -16,7 +16,8 @@ go get github.com/imakiri/witness/record@v0.20.0
 # whichever observers you actually use
 go get github.com/imakiri/witness/printers@v0.1.0
 go get github.com/imakiri/witness/observers/stdlog@v0.23.0
-go get github.com/imakiri/witness/observers/otlp@v0.2.0
+go get github.com/imakiri/witness/observers/otlp@v0.2.1
+go get github.com/imakiri/witness/observers/dynatrace@v0.1.0
 ```
 
 It's a data model, an observability API and set of its implementations. It combines metrics, logs and traces into one
@@ -131,6 +132,28 @@ is the last 8 bytes of the current one. Both are raw byte copies, so the
 same UUID appears in Jaeger and in the Postgres tables. For cross-process
 propagation use `propagation.Inject` / `propagation.Extract` over W3C
 `traceparent`, and feed the extracted values into `witness.InstanceContinue`.
+
+## Dynatrace export
+
+`observers/dynatrace` sends all three signals to Dynatrace's OTLP ingest
+(OTLP/HTTP only). Spans go through an embedded `otlp.Observer`, so the ids
+and the cross-hop chaining are the same as above; `metric:*` events become
+OTel instruments (delta temporality, as Dynatrace requires) named by the
+event message, with the `value` record as the value and every other record
+as a dimension; every other event becomes a log record carrying the
+trace_id/span_id of its span.
+
+```go
+dtObs, _ := dynatrace.NewObserver(ctx, dynatrace.Config{
+    Endpoint:    "https://{env-id}.live.dynatrace.com/api/v2/otlp",
+    APIToken:    os.Getenv("DT_API_TOKEN"), // openTelemetryTrace.ingest, logs.ingest, metrics.ingest
+    ServiceName: "my_service",
+})
+defer dtObs.Shutdown(ctx)
+```
+
+Metric instruments are created on first use, so keep high-cardinality values
+(ids, amounts) out of metric event records.
 
 ## Notes
 
