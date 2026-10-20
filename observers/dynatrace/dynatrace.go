@@ -53,7 +53,8 @@ type Config struct {
 	Resource    *resource.Resource
 
 	// SampleRate of 0 means AlwaysSample. Logs are not sampled: a log of an
-	// unsampled trace still carries its trace_id.
+	// unsampled trace is still exported with its trace_id, but without the
+	// sampled flag, so it does not claim a trace that never arrives.
 	SampleRate float64
 
 	DisableLogs    bool
@@ -85,6 +86,9 @@ func NewObserver(ctx context.Context, cfg Config) (*Observer, error) {
 		return nil, err
 	}
 
+	// Every exporter is built before any provider: the providers' batch
+	// processors and the periodic reader start goroutines, which an exporter
+	// failing further down would otherwise leave running.
 	traceExp, err := otlptracehttp.New(ctx,
 		otlptracehttp.WithEndpointURL(base+"/v1/traces"),
 		otlptracehttp.WithHeaders(headers),
@@ -92,6 +96,28 @@ func NewObserver(ctx context.Context, cfg Config) (*Observer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dynatrace: trace exporter: %w", err)
 	}
+	var logExp *otlploghttp.Exporter
+	if !cfg.DisableLogs {
+		logExp, err = otlploghttp.New(ctx,
+			otlploghttp.WithEndpointURL(base+"/v1/logs"),
+			otlploghttp.WithHeaders(headers),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("dynatrace: log exporter: %w", err)
+		}
+	}
+	var metricExp *otlpmetrichttp.Exporter
+	if !cfg.DisableMetrics {
+		metricExp, err = otlpmetrichttp.New(ctx,
+			otlpmetrichttp.WithEndpointURL(base+"/v1/metrics"),
+			otlpmetrichttp.WithHeaders(headers),
+			otlpmetrichttp.WithTemporalitySelector(deltaTemporality),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("dynatrace: metric exporter: %w", err)
+		}
+	}
+
 	sampler := sdktrace.AlwaysSample()
 	if cfg.SampleRate > 0 && cfg.SampleRate < 1 {
 		sampler = sdktrace.TraceIDRatioBased(cfg.SampleRate)
@@ -104,14 +130,7 @@ func NewObserver(ctx context.Context, cfg Config) (*Observer, error) {
 	)
 
 	var lp *sdklog.LoggerProvider
-	if !cfg.DisableLogs {
-		logExp, err := otlploghttp.New(ctx,
-			otlploghttp.WithEndpointURL(base+"/v1/logs"),
-			otlploghttp.WithHeaders(headers),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("dynatrace: log exporter: %w", err)
-		}
+	if logExp != nil {
 		lp = sdklog.NewLoggerProvider(
 			sdklog.WithProcessor(sdklog.NewBatchProcessor(logExp)),
 			sdklog.WithResource(res),
@@ -119,15 +138,7 @@ func NewObserver(ctx context.Context, cfg Config) (*Observer, error) {
 	}
 
 	var mp *sdkmetric.MeterProvider
-	if !cfg.DisableMetrics {
-		metricExp, err := otlpmetrichttp.New(ctx,
-			otlpmetrichttp.WithEndpointURL(base+"/v1/metrics"),
-			otlpmetrichttp.WithHeaders(headers),
-			otlpmetrichttp.WithTemporalitySelector(deltaTemporality),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("dynatrace: metric exporter: %w", err)
-		}
+	if metricExp != nil {
 		var readerOpts []sdkmetric.PeriodicReaderOption
 		if cfg.MetricInterval > 0 {
 			readerOpts = append(readerOpts, sdkmetric.WithInterval(cfg.MetricInterval))
@@ -138,19 +149,21 @@ func NewObserver(ctx context.Context, cfg Config) (*Observer, error) {
 		)
 	}
 
-	return newObserver(tp, lp, mp)
+	return newObserver(tp, sampler, lp, mp)
 }
 
 // newObserver wires already built providers; tests pass in-memory ones.
-// tp must use otlp.IDGenerator, or log span_ids name spans that do not exist.
-func newObserver(tp *sdktrace.TracerProvider, lp *sdklog.LoggerProvider, mp *sdkmetric.MeterProvider) (*Observer, error) {
+// tp must use otlp.IDGenerator, or log span_ids name spans that do not exist,
+// and sampler must be the one tp samples with, or logs claim the wrong traces
+// as sampled.
+func newObserver(tp *sdktrace.TracerProvider, sampler sdktrace.Sampler, lp *sdklog.LoggerProvider, mp *sdkmetric.MeterProvider) (*Observer, error) {
 	traces, err := otlp.NewObserver(otlp.Config{Provider: tp})
 	if err != nil {
 		return nil, err
 	}
 	o := &Observer{traces: traces, shutdown: []func(context.Context) error{traces.Shutdown}}
 	if lp != nil {
-		o.logs = newLogs(lp)
+		o.logs = newLogs(lp, sampler)
 		o.shutdown = append(o.shutdown, lp.Shutdown)
 	}
 	if mp != nil {

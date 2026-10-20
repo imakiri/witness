@@ -46,13 +46,22 @@ type testEnv struct {
 
 func newTestEnv(t *testing.T) testEnv {
 	t.Helper()
+	return newSampledTestEnv(t, sdktrace.AlwaysSample())
+}
+
+func newSampledTestEnv(t *testing.T, sampler sdktrace.Sampler) testEnv {
+	t.Helper()
 	spans := tracetest.NewSpanRecorder()
-	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans), sdktrace.WithIDGenerator(otlp.IDGenerator()))
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSpanProcessor(spans),
+		sdktrace.WithSampler(sampler),
+		sdktrace.WithIDGenerator(otlp.IDGenerator()),
+	)
 	logs := &logRecorder{}
 	lp := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(logs)))
 	reader := sdkmetric.NewManualReader(sdkmetric.WithTemporalitySelector(deltaTemporality))
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	obs, err := newObserver(tp, lp, mp)
+	obs, err := newObserver(tp, sampler, lp, mp)
 	if err != nil {
 		t.Fatalf("newObserver: %v", err)
 	}
@@ -104,6 +113,37 @@ func TestLogCarriesSpanOfTrace(t *testing.T) {
 	// span events stay too — the trace view shows them
 	if len(work.Events()) != 1 {
 		t.Fatalf("expected 1 span event, got %d", len(work.Events()))
+	}
+}
+
+// Logs are exported whatever the sampler says, so the sampled flag on a log
+// must be the span's own decision: a log claiming a dropped trace points the
+// Dynatrace UI at a trace that never arrives.
+func TestLogSampledFlagFollowsSampler(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		sampler sdktrace.Sampler
+		sampled bool
+	}{
+		{"always", sdktrace.AlwaysSample(), true},
+		{"never", sdktrace.NeverSample(), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newSampledTestEnv(t, tc.sampler)
+			ctx, finish := witness.Instance(context.Background(), env.obs, "svc", "1")
+			witness.Info(ctx, "inside")
+			finish()
+
+			if len(env.logs.records) != 1 {
+				t.Fatalf("expected 1 log record, got %d", len(env.logs.records))
+			}
+			if got := env.logs.records[0].TraceFlags().IsSampled(); got != tc.sampled {
+				t.Fatalf("log sampled flag %v, want %v", got, tc.sampled)
+			}
+			if got := len(env.spans.Ended()) > 0; got != tc.sampled {
+				t.Fatalf("span exported %v, want %v", got, tc.sampled)
+			}
+		})
 	}
 }
 

@@ -10,15 +10,17 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
 type logs struct {
-	logger log.Logger
+	logger  log.Logger
+	sampler sdktrace.Sampler // the trace provider's, so the sampled flag matches the span; nil: always sampled
 }
 
-func newLogs(lp *sdklog.LoggerProvider) *logs {
-	return &logs{logger: lp.Logger(otlp.TracerName)}
+func newLogs(lp *sdklog.LoggerProvider, sampler sdktrace.Sampler) *logs {
+	return &logs{logger: lp.Logger(otlp.TracerName), sampler: sampler}
 }
 
 func (l *logs) observe(event witness.Event) {
@@ -43,14 +45,18 @@ func (l *logs) observe(event witness.Event) {
 	}
 	r.AddAttributes(attrs...)
 
-	l.logger.Emit(spanContext(event), r)
+	l.logger.Emit(l.spanContext(event), r)
 }
 
 // spanContext gives the SDK the trace_id/span_id to stamp on the record. They
 // are derived exactly as otlp derives them for the span itself — the full
 // trace uuid and the last 8 bytes of the current span uuid — or the log would
 // point at a span that does not exist.
-func spanContext(event witness.Event) context.Context {
+//
+// The sampled flag is the sampler's answer for that trace_id. The samplers
+// NewObserver uses (AlwaysSample, TraceIDRatioBased) decide on the trace_id
+// alone, so this is the decision the span itself got.
+func (l *logs) spanContext(event witness.Event) context.Context {
 	ctx := context.Background()
 	if len(event.SpanIDs) == 0 {
 		return ctx
@@ -64,7 +70,11 @@ func spanContext(event witness.Event) context.Context {
 	var sid trace.SpanID
 	copy(tid[:], traceID[:])
 	copy(sid[:], cur[8:])
-	sc := trace.NewSpanContext(trace.SpanContextConfig{TraceID: tid, SpanID: sid, TraceFlags: trace.FlagsSampled})
+	var flags trace.TraceFlags
+	if l.sampler == nil || l.sampler.ShouldSample(sdktrace.SamplingParameters{ParentContext: ctx, TraceID: tid}).Decision == sdktrace.RecordAndSample {
+		flags = trace.FlagsSampled
+	}
+	sc := trace.NewSpanContext(trace.SpanContextConfig{TraceID: tid, SpanID: sid, TraceFlags: flags})
 	if !sc.IsValid() {
 		return ctx
 	}
